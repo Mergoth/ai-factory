@@ -20,6 +20,8 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    - the handoff `handoffs/<timestamp>-<slug>.md`
    - the newest `handoffs/logs-*-<slug>.txt`
    - `git status --short` and `git diff` (add `git diff --staged` if staged)
+   - the project brain, if present: `factory/context.md`, `factory/adr/`,
+     `factory/memory.md`. These are what "right for this project" means here.
 
 3. **Check the done criteria one by one.** For each checkbox in the handoff,
    find the evidence in the diff or in the code. Read the actual files - the
@@ -35,8 +37,11 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    - tests deleted, skipped, or weakened instead of fixed
    - files changed that the handoff did not list, with no reason given
    - secrets, keys, tokens, or absolute local paths added
-   - `specs/` or `handoffs/` edited by agy (it must not touch those)
+   - `specs/`, `handoffs/`, or `.factory/` edited by agy (it must not touch those)
    - code that satisfies the letter of a criterion but not the goal
+   - **an ADR broken.** Name the ADR in the bullet. This is `Needs fix` even
+     when every test passes - tests do not encode architecture.
+   - a convention in `factory/context.md` ignored
 
 6. **Append a status block to the handoff.** Append, never overwrite - the
    history of attempts is the point. Exact shape:

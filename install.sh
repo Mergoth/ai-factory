@@ -107,11 +107,25 @@ install_one "agents/skills"              ".agents/skills"
 install_one "scripts/run_antigravity.sh" "scripts/run_antigravity.sh"
 
 # caveman: work dirs. git needs a file to keep them.
-for d in specs handoffs; do
+for d in specs handoffs factory/adr; do
   mkdir -p "$REPO_ROOT/$d"
   [ -f "$REPO_ROOT/$d/.gitkeep" ] || touch "$REPO_ROOT/$d/.gitkeep"
   echo "  dir   $d/"
 done
+
+# caveman: project brain. seeded once from templates, then it is yours.
+# never overwrite - these fill up with real project knowledge.
+seed() { # seed <template> <dest-rel>
+  if [ -f "$REPO_ROOT/$2" ]; then
+    echo "  keep  $2 (yours)"
+  else
+    cp "$FACTORY_DIR/templates/$1" "$REPO_ROOT/$2"
+    echo "  seed  $2"
+  fi
+}
+seed context.md      "factory/context.md"
+seed memory.md       "factory/memory.md"
+seed prompt-extra.md "factory/prompt-extra.md"
 
 # caveman: per-project config. never overwrite what is already there.
 if [ -f "$REPO_ROOT/factory.env" ]; then
@@ -128,6 +142,7 @@ add_ignore() {
 }
 touch "$GI"
 add_ignore "handoffs/logs-*.txt"
+add_ignore ".factory-cache/"
 
 echo
 echo "done."

@@ -14,7 +14,9 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
 
 2. **Read the handoff out loud first.** Print its Goal and Done criteria to the
    user before launching anything. A wrong handoff wastes a whole agy run, and
-   this is the cheapest moment to catch it. Then start round 1.
+   this is the cheapest moment to catch it. Skim `factory/memory.md` too - it is
+   short, and it is where the last rounds' mistakes are written down. Then start
+   round 1.
 
 3. **Pick the model.** Run `agy models` and read the real list. Never pass an
    id from memory - ids rotate, new families appear, old ones vanish, and a
@@ -66,7 +68,18 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
    - Round cap hit -> stop. Say `STOPPED at <n> rounds.` Summarise what is still
      failing and what you would try next. Do not silently keep going.
 
-7. **Report at the end**: rounds used, model per round, final status, files
+7. **Write down what you learned.** If this task taught something a future run
+   would want, append one line to `factory/memory.md`. Only real lessons:
+   - a model tier that could not handle a part of this repo
+   - a gotcha that cost a round
+   - a convention agy kept missing
+   - the `LEARNED:` line from the agy report, if it is worth keeping
+
+   Nothing worth saying -> write nothing. An empty memory beats a padded one.
+   Facts that are always true belong in `factory/context.md` instead, and rules
+   future code must obey belong in an ADR.
+
+8. **Report at the end**: rounds used, model per round, final status, files
    changed, last test line, and anything you want a human to look at.
 
 ## Rules

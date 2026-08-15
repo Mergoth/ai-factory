@@ -39,9 +39,15 @@ your-project/
   .agents/skills                  -> .factory/agents/skills
   scripts/run_antigravity.sh      -> .factory/scripts/run_antigravity.sh
   factory.env                     # real file, yours, per project
+  factory/                        # YOUR project brain - context, ADRs, memory
   specs/                          # feature specs
   handoffs/                       # contracts + logs
+  .factory-cache/                 # gitignored, cached model list
 ```
+
+Note the two similar names: **`.factory/` is the harness** (vendored, replaced
+on update, never edit it) and **`factory/` is your project's own knowledge**
+(seeded once, then yours forever).
 
 Symlinks mean improvements to the harness reach every project with
 `git submodule update --remote .factory`. Nothing is copied, so nothing drifts.
@@ -53,6 +59,40 @@ Then set your test command:
 ```bash
 $EDITOR factory.env      # TEST_CMD="pytest -q"  (or npm test, go test ./..., ...)
 ```
+
+## Teaching it about your project
+
+`.factory/` is the vendored harness — never edit it. **`factory/` is yours**,
+and it is how one generic harness becomes specific to this codebase. `install.sh`
+seeds it; fill in what is useful and skip the rest.
+
+| File | What it is | Who reads it |
+|---|---|---|
+| `factory/context.md` | stack, commands, layout, conventions, gotchas | spec, builder, checker |
+| `factory/adr/` | architecture decisions, numbered. **Binding.** | spec, builder, checker |
+| `factory/memory.md` | one-line lessons from past runs | builder, spec |
+| `factory/prompt-extra.md` | raw orders pasted into the builder prompt | builder |
+
+Each has a distinct job, and keeping them apart is what stops the whole thing
+turning into one sprawling prompt:
+
+- **`context.md`** — things always true about the repo. Where code lives, how to
+  run it, what a good test looks like here.
+- **`adr/`** — decisions with consequences. `/factory-check` treats a broken ADR
+  as `Needs fix` **even when every test passes**, because tests do not encode
+  architecture. `/factory-spec` offers to write one when a change decides
+  something structural, and refuses to quietly violate an existing one.
+- **`memory.md`** — what went wrong last time. "Flash models keep missing the
+  retry decorator in `api/`." `/factory-build` appends a line when a round
+  teaches something, and is told to keep it under ~40 lines and delete stale
+  entries — a wrong memory costs more than no memory.
+- **`prompt-extra.md`** — the escape hatch, when you want to tell the builder
+  something directly without forking the harness.
+
+Files still holding their seeded `factory:template` marker are treated as
+unfilled and **not** sent to `agy` — blank headings would read as project facts.
+Delete the marker line when you fill one in. Nothing here is required; an empty
+`factory/` just means the builder works from the spec alone.
 
 ## Use it
 
@@ -103,8 +143,9 @@ diff is left in your working tree for you to review.
 
 ### Model selection
 
-Model ids rotate — `gemini-3.7-flash-*` appeared in the middle of writing this
-README — so nothing here hardcodes one and hopes.
+**No model ids are configured anywhere.** They rotate — a whole new family
+appeared while this README was being written — so a pinned id rots silently and
+costs you a failed round to discover.
 
 - **The spec says how hard, not which model.** `/factory-spec` writes a
   `Difficulty:` line (`mechanical` / `normal` / `tricky`) into the handoff.
@@ -113,17 +154,23 @@ README — so nothing here hardcodes one and hopes.
   Cheap flash for a rename, the strongest thinking model for tricky logic. It
   steps up a tier when a round fails on correctness rather than re-rolling the
   same model against the same contract.
-- **The script validates and falls back.** Every candidate is checked against
-  `agy models` first, so a dead id is skipped without burning a call. If `agy`
-  itself fails to run, the script walks down `AGY_MODELS` in order.
+- **The script validates and falls back.** The chosen id is checked against the
+  live list, so a dead id is caught without burning a call. If `agy` itself
+  fails to run, the script tries other models — **preferring a different
+  family**, since three tiers of one family all die together when that family
+  is down.
 
 The fallback triggers on `agy` exiting non-zero — a bad id, quota, transport
 failure. It deliberately does **not** trigger when `agy` runs fine but the build
 fails, because that is the builder's problem, not the model's, and retrying it
 on three models would just cost three times as much to fail the same way.
 
+The list is cached in `.factory-cache/` (gitignored) for `MODELS_TTL_MIN`
+minutes, since the fetch is a slow network call and every round would otherwise
+pay it. Force a refresh with `--refresh-models`.
+
 ```bash
-bash scripts/run_antigravity.sh api-rate-limit --model gemini-3.7-flash-high
+bash scripts/run_antigravity.sh api-rate-limit --model <id from agy models>
 ```
 
 Two more things about `agy` the runner works around, worth knowing if you edit
@@ -225,7 +272,11 @@ scripts/run_antigravity.sh     # call agy, tee log
 agents/skills/                 # agy-side skills (empty by design)
 templates/spec.md              # shape of a spec
 templates/handoff.md           # shape of a handoff
-factory.env.example            # per-project config template
+templates/context.md           # seeds factory/context.md
+templates/memory.md            # seeds factory/memory.md
+templates/adr.md               # shape of an ADR
+templates/prompt-extra.md      # seeds factory/prompt-extra.md
+factory.env.example            # per-project config template, no model ids
 ```
 
 ## License
