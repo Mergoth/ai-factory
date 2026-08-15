@@ -83,6 +83,19 @@ see the exact prompt and command without calling `agy`.
 `agy` changes code and runs tests. It does not commit, branch, or push — the
 diff is left in your working tree for you to review.
 
+Two things about `agy` the runner works around, worth knowing if you edit the
+prompt:
+
+- **It does not inherit your shell's cwd.** In `--print` mode its terminal
+  starts in `~/.gemini/antigravity-cli/scratch`. The runner passes `--add-dir`,
+  writes every path in the prompt as absolute, and tells `agy` to prefix each
+  command with `cd <repo root>`. Drop that and it will hunt across your whole
+  filesystem for `specs/` and report the spec as missing.
+- **Its exit code is 0 even when the build fails.** A blocked run and a clean
+  run both exit 0, so the exit code is not a signal. The report in the log and
+  the actual test run are what count — which is why `/factory-check` re-runs
+  the tests itself.
+
 **3. Check.** Back in Claude Code:
 
 ```

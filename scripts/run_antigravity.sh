@@ -61,20 +61,34 @@ TS="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG="handoffs/logs-$TS-$SLUG.txt"
 mkdir -p handoffs
 
+# caveman: agy does not use shell cwd as workspace. give it absolute paths
+# and --add-dir, or it goes hunting across the whole disk and finds nothing.
+SPEC_ABS="$REPO_ROOT/$SPEC"
+HANDOFF_ABS="$REPO_ROOT/$HANDOFF"
+
 # caveman: one prompt. tell agy read spec, change code, run test.
 PROMPT="$(cat <<PROMPT_END
-You are the build agent for this repo. Work only inside this repo.
+You are the build agent for the repo at:
+  $REPO_ROOT
+
+Your terminal does NOT start in that repo - it starts in a scratch directory.
+So every terminal command you run must cd there first, like this:
+  cd $REPO_ROOT && <your command>
+
+All file paths below are absolute and already exist. Read them directly. Do
+not search the filesystem for them - if a read fails, cd to the repo and use
+ls, do not go hunting elsewhere.
 
 Read these two files first, in full:
-  $SPEC
-  $HANDOFF
+  $SPEC_ABS
+  $HANDOFF_ABS
 
 The handoff is the contract. Do exactly this:
 1. Change the code so every item under "Done criteria" in the handoff is true.
 2. Touch the files listed under "Files to touch". Touch other files only if
    the change genuinely requires it, and say which ones and why.
-3. Run the tests with this exact command, from the repo root:
-     $TEST_CMD
+3. Run the tests with this exact command:
+     cd $REPO_ROOT && $TEST_CMD
 4. If tests fail, fix the code and run them again. Repeat until they pass or
    you are blocked.
 5. Do not commit. Do not push. Do not create branches. Leave changes in the
@@ -104,7 +118,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "--- prompt ---"
   printf '%s\n' "$PROMPT"
   echo "--- command ---"
-  echo "agy --print <prompt> --model $AGY_MODEL --print-timeout $AGY_TIMEOUT --dangerously-skip-permissions"
+  echo "agy --print <prompt> --add-dir $REPO_ROOT --model $AGY_MODEL --print-timeout $AGY_TIMEOUT --dangerously-skip-permissions"
   exit 0
 fi
 
@@ -126,6 +140,7 @@ command -v agy >/dev/null 2>&1 || { echo "error: 'agy' not on PATH" >&2; exit 1;
 
 set +e
 agy --print "$PROMPT" \
+    --add-dir "$REPO_ROOT" \
     --model "$AGY_MODEL" \
     --print-timeout "$AGY_TIMEOUT" \
     --dangerously-skip-permissions 2>&1 | tee -a "$LOG"

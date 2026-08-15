@@ -26,9 +26,10 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    diff alone can hide that a function is never called.
 
 4. **Re-run the tests yourself.** Run `TEST_CMD` from `factory.env` in a Bash
-   call. Do not trust `RESULT: PASS` in the log. The log says what agy claims;
-   the test run says what is true. If they disagree, the test run wins and that
-   disagreement is a red flag worth a bullet.
+   call. Do not trust `RESULT: PASS` in the log, and do not trust the `agy exit
+   code` line either - agy exits 0 even when it failed or was blocked. The log
+   says what agy claims; the test run says what is true. If they disagree, the
+   test run wins and that disagreement is a red flag worth a bullet.
 
 5. **Look for red flags:**
    - tests deleted, skipped, or weakened instead of fixed
