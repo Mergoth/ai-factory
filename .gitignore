@@ -1,0 +1,4 @@
+# caveman: harness repo holds no run output.
+handoffs/logs-*.txt
+factory.env
+.DS_Store
