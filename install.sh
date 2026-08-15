@@ -13,6 +13,7 @@ usage: bash .factory/install.sh [target-repo-dir] [--copy] [--force]
 
 creates in the target repo:
   .claude/skills/factory-spec    -> harness skill (Claude)
+  .claude/skills/factory-build   -> harness skill (Claude)
   .claude/skills/factory-check   -> harness skill (Claude)
   .agents/skills                 -> harness skills (Antigravity)
   scripts/run_antigravity.sh     -> runner
@@ -100,6 +101,7 @@ install_one() { # install_one <src-rel-to-harness> <dest-rel-to-repo>
 }
 
 install_one "skills/factory-spec"        ".claude/skills/factory-spec"
+install_one "skills/factory-build"       ".claude/skills/factory-build"
 install_one "skills/factory-check"       ".claude/skills/factory-check"
 install_one "agents/skills"              ".agents/skills"
 install_one "scripts/run_antigravity.sh" "scripts/run_antigravity.sh"
@@ -132,5 +134,7 @@ echo "done."
 echo "next:"
 echo "  1. edit $REPO_ROOT/factory.env and set TEST_CMD"
 echo "  2. in Claude Code:  /factory-spec <what you want built>"
-echo "  3. in a shell:      bash scripts/run_antigravity.sh <slug>"
-echo "  4. in Claude Code:  /factory-check <slug>"
+echo "  3. in Claude Code:  /factory-build <slug>   (drives agy, loops, verifies)"
+echo
+echo "manual route, if you want to drive it yourself:"
+echo "  bash scripts/run_antigravity.sh <slug>  then  /factory-check <slug>"

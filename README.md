@@ -9,10 +9,12 @@ Three moving parts, no magic:
 | Part | Who runs it | What it does |
 |---|---|---|
 | `/factory-spec` | Claude Code | reads the code, writes `specs/<slug>.md` + `handoffs/<ts>-<slug>.md` |
-| `scripts/run_antigravity.sh` | your shell | calls `agy` with that contract, tees the log to `handoffs/` |
+| `/factory-build` | Claude Code | launches `agy`, waits, verifies, re-runs until pass or cap |
+| `scripts/run_antigravity.sh` | Claude or your shell | calls `agy` with that contract, tees the log to `handoffs/` |
 | `/factory-check` | Claude Code | re-runs the tests, appends a Success / Needs fix block to the handoff |
 
-The handoff file is the contract. It is the only thing the three parts share.
+The handoff file is the contract. It is the only thing these parts share, which
+is what lets Claude and `agy` hand work back and forth without a shared session.
 
 ## Install into a project
 
@@ -32,6 +34,7 @@ then creates the working directories:
 your-project/
   .factory/                       # submodule, the harness
   .claude/skills/factory-spec     -> .factory/skills/factory-spec
+  .claude/skills/factory-build    -> .factory/skills/factory-build
   .claude/skills/factory-check    -> .factory/skills/factory-check
   .agents/skills                  -> .factory/agents/skills
   scripts/run_antigravity.sh      -> .factory/scripts/run_antigravity.sh
@@ -70,7 +73,22 @@ Read the handoff before running anything. It has Goal, Files to touch, Tests to
 run, Done criteria. If it is wrong, say so and Claude rewrites it — that is far
 cheaper than letting `agy` build the wrong thing.
 
-**2. Build.** In a shell:
+**2. Build.** In Claude Code:
+
+```
+/factory-build api-rate-limit
+```
+
+Claude prints the handoff's goal and done criteria, launches `agy` in the
+background, waits for it to exit, verifies the result, and re-runs `agy` with
+the fix bullets until the tests pass or `MAX_ROUNDS` (default 3) is hit. You do
+not have to sit in the terminal for it.
+
+The run has to be backgrounded because Claude Code caps foreground shell
+commands at 10 minutes and an `agy` run can be longer. `/factory-build` handles
+that; it is only worth knowing if you rewrite the skill.
+
+If you would rather drive it by hand, the script is a normal script:
 
 ```bash
 bash scripts/run_antigravity.sh api-rate-limit
@@ -120,11 +138,13 @@ Tests: 2 failed, 41 passed
 - un-skip test_burst_allowance and make it pass
 ```
 
-**4. Loop.** `Needs fix` means run step 2 again — the next-fix bullets are in
-the handoff, so `agy` picks them up on the same contract. Repeat until
-`Status: Success`.
+**4. Loop.** `/factory-build` already loops, so normally there is nothing to do
+here. If you are driving by hand, `Needs fix` means run step 2 again — the
+next-fix bullets are in the handoff, so `agy` picks them up on the same
+contract. Repeat until `Status: Success`.
 
-To automate the checking, use Claude Code's built-in `/loop`:
+To watch a long-running job instead of driving it, use Claude Code's built-in
+`/loop`:
 
 ```
 /loop 5m /factory-check api-rate-limit
@@ -132,6 +152,14 @@ To automate the checking, use Claude Code's built-in `/loop`:
 
 That re-runs the check every five minutes. `/factory-check` prints `DONE` when
 the status is Success, which is your signal to stop the loop.
+
+### Which one to use
+
+- `/factory-build` — the normal path. Hands-off until it passes or gives up.
+- `run_antigravity.sh` + `/factory-check` — when you want to inspect the diff
+  between every round, or you are debugging the harness itself.
+- `/loop /factory-check` — when something else is running the builds and you
+  only want to poll the verdict.
 
 ## Safety
 
@@ -144,7 +172,11 @@ the status is Success, which is your signal to stop the loop.
   the repo. Use `--dry-run` first on a new project, and review the diff before
   committing anything.
 - **Separation of duties:** `agy` never edits `specs/` or `handoffs/`;
-  `/factory-check` never edits code. Neither one grades its own work.
+  `/factory-check` and `/factory-build` never edit code. Nothing grades its own
+  work.
+- **Bounded loop:** `/factory-build` stops at `MAX_ROUNDS` (default 3), and
+  earlier if two rounds produce the same failure. It will not spend your money
+  in a circle, and it asks before raising its own cap.
 - **No secrets:** `factory.env` holds a test command, a model name, and a
   timeout. Keep credentials out of it — it is committed to your project repo.
 - **Logs are gitignored** (`handoffs/logs-*.txt`) since they can be long and may
@@ -162,6 +194,7 @@ the status is Success, which is your signal to stop the loop.
 ```
 install.sh                     # symlink harness into a target repo
 skills/factory-spec/SKILL.md   # Claude: write spec + handoff
+skills/factory-build/SKILL.md  # Claude: drive agy, loop, verify
 skills/factory-check/SKILL.md  # Claude: verify, write status
 scripts/run_antigravity.sh     # call agy, tee log
 agents/skills/                 # agy-side skills (empty by design)
