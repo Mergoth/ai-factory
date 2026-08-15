@@ -51,13 +51,6 @@ Two directories, and the split is the whole idea:
   Never edit it; your changes would be blown away and belong upstream anyway.
 - **`factory/`** — your project's own knowledge. Seeded once, then yours forever.
 
-Already installed under the old `.factory` name? Rename and re-run:
-
-```bash
-git mv .factory factory-engine
-bash factory-engine/install.sh      # repoints the symlinks
-```
-
 Symlinks mean improvements to the harness reach every project with
 `git submodule update --remote factory-engine`. Nothing is copied, so nothing
 drifts.
