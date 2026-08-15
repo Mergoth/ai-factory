@@ -29,10 +29,10 @@ caveman: read code, write spec, write handoff, stop. no code changes.
    If `specs/<slug>.md` already exists, this is a revision - overwrite the spec
    and write a new handoff.
 
-5. **Write `specs/<slug>.md`** using `.factory/templates/spec.md` as the shape.
+5. **Write `specs/<slug>.md`** using `factory-engine/templates/spec.md` as the shape.
    The spec is the durable description of what the feature is.
 
-6. **Write `handoffs/<timestamp>-<slug>.md`** using `.factory/templates/handoff.md`.
+6. **Write `handoffs/<timestamp>-<slug>.md`** using `factory-engine/templates/handoff.md`.
    Timestamp comes from `date -u +%Y%m%dT%H%M%SZ`. The handoff is the contract
    for one build run. It must have all four sections:
    - **Goal** - one paragraph, what is true when this is done, plus a
@@ -47,7 +47,7 @@ caveman: read code, write spec, write handoff, stop. no code changes.
 
 7. **Offer an ADR if the change decides something structural** - a new
    dependency, a new layer, a data model shape, a rule future code must follow.
-   Write it to `factory/adr/<NNNN>-<slug>.md` from `.factory/templates/adr.md`,
+   Write it to `factory/adr/<NNNN>-<slug>.md` from `factory-engine/templates/adr.md`,
    next number in sequence, `Status: proposed`. Ask first; do not spray ADRs at
    ordinary features.
 
@@ -56,7 +56,7 @@ caveman: read code, write spec, write handoff, stop. no code changes.
 ## Rules
 
 - Write no implementation code. Spec and handoff only.
-- Never edit `.factory/` - that is the vendored harness. `factory/` is the
+- Never edit `factory-engine/` - that is the vendored harness. `factory/` is the
   project's own and yours to add to.
 - Every done criterion must be objectively checkable. If you cannot say how it
   would be verified, it does not belong in the list.

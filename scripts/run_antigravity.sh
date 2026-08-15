@@ -80,10 +80,10 @@ mkdir -p handoffs
 SPEC_ABS="$REPO_ROOT/$SPEC"
 HANDOFF_ABS="$REPO_ROOT/$HANDOFF"
 
-# caveman: project brain. factory/ is yours, .factory/ is the harness.
-# only mention files that exist, or agy goes looking for ghosts.
-# caveman: a file still carrying the template marker is not filled in yet.
-# feeding agy blank headings is worse than saying nothing.
+# caveman: project brain. factory/ is yours, factory-engine/ is the harness.
+# only mention files that exist, or agy goes looking for ghosts. a file still
+# carrying the template marker is not filled in yet - feeding agy blank
+# headings is worse than saying nothing.
 CONTEXT_BLOCK=""
 add_context() { # add_context <abs-path> <why>
   [ -s "$1" ] || return 0

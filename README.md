@@ -23,8 +23,8 @@ one copy serves every project you use it in.
 
 ```bash
 cd /path/to/your-project
-git submodule add https://github.com/Mergoth/ai-factory .factory
-bash .factory/install.sh
+git submodule add https://github.com/Mergoth/ai-factory factory-engine
+bash factory-engine/install.sh
 ```
 
 `install.sh` symlinks the harness into the paths Claude Code and `agy` look at,
@@ -32,12 +32,12 @@ then creates the working directories:
 
 ```
 your-project/
-  .factory/                       # submodule, the harness
-  .claude/skills/factory-spec     -> .factory/skills/factory-spec
-  .claude/skills/factory-build    -> .factory/skills/factory-build
-  .claude/skills/factory-check    -> .factory/skills/factory-check
-  .agents/skills                  -> .factory/agents/skills
-  scripts/run_antigravity.sh      -> .factory/scripts/run_antigravity.sh
+  factory-engine/                       # submodule, the harness
+  .claude/skills/factory-spec     -> factory-engine/skills/factory-spec
+  .claude/skills/factory-build    -> factory-engine/skills/factory-build
+  .claude/skills/factory-check    -> factory-engine/skills/factory-check
+  .agents/skills                  -> factory-engine/agents/skills
+  scripts/run_antigravity.sh      -> factory-engine/scripts/run_antigravity.sh
   factory.env                     # real file, yours, per project
   factory/                        # YOUR project brain - context, ADRs, memory
   specs/                          # feature specs
@@ -45,13 +45,23 @@ your-project/
   .factory-cache/                 # gitignored, cached model list
 ```
 
-Note the two similar names: **`.factory/` is the harness** (vendored, replaced
-on update, never edit it) and **`factory/` is your project's own knowledge**
-(seeded once, then yours forever).
+Two directories, and the split is the whole idea:
+
+- **`factory-engine/`** — the machinery. Vendored, replaced wholesale on update.
+  Never edit it; your changes would be blown away and belong upstream anyway.
+- **`factory/`** — your project's own knowledge. Seeded once, then yours forever.
+
+Already installed under the old `.factory` name? Rename and re-run:
+
+```bash
+git mv .factory factory-engine
+bash factory-engine/install.sh      # repoints the symlinks
+```
 
 Symlinks mean improvements to the harness reach every project with
-`git submodule update --remote .factory`. Nothing is copied, so nothing drifts.
-On a filesystem without symlinks, use `bash .factory/install.sh --copy` and
+`git submodule update --remote factory-engine`. Nothing is copied, so nothing
+drifts.
+On a filesystem without symlinks, use `bash factory-engine/install.sh --copy` and
 re-run it after each update.
 
 Then set your test command:
@@ -62,7 +72,7 @@ $EDITOR factory.env      # TEST_CMD="pytest -q"  (or npm test, go test ./..., ..
 
 ## Teaching it about your project
 
-`.factory/` is the vendored harness — never edit it. **`factory/` is yours**,
+`factory-engine/` is the vendored harness — never edit it. **`factory/` is yours**,
 and it is how one generic harness becomes specific to this codebase. `install.sh`
 seeds it; fill in what is useful and skip the rest.
 

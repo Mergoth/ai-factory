@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-usage: bash .factory/install.sh [target-repo-dir] [--copy] [--force]
+usage: bash factory-engine/install.sh [target-repo-dir] [--copy] [--force]
 
   target-repo-dir  repo to install into. default: repo containing cwd.
   --copy           copy files instead of symlinking (for filesystems
@@ -47,7 +47,7 @@ fi
 if [ "$REPO_ROOT" = "$FACTORY_DIR" ]; then
   echo "error: target repo is the harness repo itself." >&2
   echo "add it to a project first:" >&2
-  echo "  git submodule add <url> .factory && bash .factory/install.sh" >&2
+  echo "  git submodule add <url> factory-engine && bash factory-engine/install.sh" >&2
   exit 1
 fi
 
