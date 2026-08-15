@@ -101,8 +101,33 @@ see the exact prompt and command without calling `agy`.
 `agy` changes code and runs tests. It does not commit, branch, or push — the
 diff is left in your working tree for you to review.
 
-Two things about `agy` the runner works around, worth knowing if you edit the
-prompt:
+### Model selection
+
+Model ids rotate — `gemini-3.7-flash-*` appeared in the middle of writing this
+README — so nothing here hardcodes one and hopes.
+
+- **The spec says how hard, not which model.** `/factory-spec` writes a
+  `Difficulty:` line (`mechanical` / `normal` / `tricky`) into the handoff.
+- **The build agent picks.** `/factory-build` runs `agy models`, reads today's
+  real list, maps difficulty to a family and tier, and passes `--model`.
+  Cheap flash for a rename, the strongest thinking model for tricky logic. It
+  steps up a tier when a round fails on correctness rather than re-rolling the
+  same model against the same contract.
+- **The script validates and falls back.** Every candidate is checked against
+  `agy models` first, so a dead id is skipped without burning a call. If `agy`
+  itself fails to run, the script walks down `AGY_MODELS` in order.
+
+The fallback triggers on `agy` exiting non-zero — a bad id, quota, transport
+failure. It deliberately does **not** trigger when `agy` runs fine but the build
+fails, because that is the builder's problem, not the model's, and retrying it
+on three models would just cost three times as much to fail the same way.
+
+```bash
+bash scripts/run_antigravity.sh api-rate-limit --model gemini-3.7-flash-high
+```
+
+Two more things about `agy` the runner works around, worth knowing if you edit
+the prompt:
 
 - **It does not inherit your shell's cwd.** In `--print` mode its terminal
   starts in `~/.gemini/antigravity-cli/scratch`. The runner passes `--add-dir`,

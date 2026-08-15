@@ -27,7 +27,10 @@ caveman: read code, write spec, write handoff, stop. no code changes.
 5. **Write `handoffs/<timestamp>-<slug>.md`** using `.factory/templates/handoff.md`.
    Timestamp comes from `date -u +%Y%m%dT%H%M%SZ`. The handoff is the contract
    for one build run. It must have all four sections:
-   - **Goal** - one paragraph, what is true when this is done
+   - **Goal** - one paragraph, what is true when this is done, plus a
+     `Difficulty:` line of `mechanical`, `normal`, or `tricky`. `/factory-build`
+     turns that into a model choice. Do not name a model id yourself - they
+     rotate, and you would be guessing from stale memory.
    - **Files to touch** - real paths, one per line, with a note on each
    - **Tests to run** - the exact `TEST_CMD` from factory.env, plus any specific
      test names that must pass

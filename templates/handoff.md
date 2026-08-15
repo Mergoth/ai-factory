@@ -7,6 +7,14 @@ Created: <timestamp>
 
 One paragraph. What is true when this is done.
 
+Difficulty: mechanical | normal | tricky
+<!-- mechanical = rename, small patch, few files
+     normal     = a feature with tests
+     tricky     = subtle logic, concurrency, wide refactor
+     /factory-build maps this to a model from `agy models`. No model ids here,
+     they rotate. -->
+
+
 ## Files to touch
 
 - `path/to/file.py` - what changes here
