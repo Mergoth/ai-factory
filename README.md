@@ -581,6 +581,37 @@ gitignored, and safe to delete when nothing is running.
   echo local paths. The handoff and its status blocks are committed; those are
   the record worth keeping.
 
+## Changing the harness
+
+The harness has its own test suite, and it needs no `agy`, no network and no
+money:
+
+```bash
+bash scripts/selftest.sh          # ~12 seconds, 70 cases
+bash scripts/selftest.sh --only lock
+bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
+```
+
+It builds throwaway git repos under `$TMPDIR`, installs this harness into them,
+puts a **fake `agy`** on `PATH` — one that can succeed, fail on a given model,
+or die mid-sentence — and drives the real scripts against them. It covers
+install and re-install, the runner's preflight gates, the template-marker rule,
+locks and stale locks, snapshot capture and restore, the round counter, model
+fallback, every lint rule, and all seven states of the resume machine.
+
+Two rules keep it useful:
+
+- **A bug in the harness arrives here as a failing case before it is fixed.**
+  Both bugs found while writing these scripts — a `pipefail` + empty-glob exit
+  that silently killed the linter, and two rounds in one second sharing a log
+  filename so a round vanished from the counter — are cases in this file now.
+- **It touches nothing outside its sandbox.** If a case ever needs your real
+  repo, the case is wrong.
+
+The prose is a different matter. `SKILL.md` files are instructions *for a model*,
+and no script can tell you whether the wording lands. What it can tell you is
+that the machinery underneath still behaves.
+
 ## Requirements
 
 - `agy` on `PATH` — [Antigravity CLI](https://antigravity.google)
@@ -604,6 +635,7 @@ personas/operator.md           # lens: test, fail loudly, roll back
 scripts/run_antigravity.sh     # call agy, tee log, lock, snapshot
 scripts/factory_lint.sh        # shape checks, free, no model call
 scripts/factory_state.sh       # where the run stopped, what to do next
+scripts/selftest.sh            # the harness's own test suite, no agy needed
 agents/skills/                 # agy-side skills (empty by design)
 templates/brief.md             # shape of a brief
 templates/spec.md              # shape of a spec
