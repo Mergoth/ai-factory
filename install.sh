@@ -16,11 +16,15 @@ creates in the target repo:
   .claude/skills/factory-spec    -> harness skill (Claude)
   .claude/skills/factory-build   -> harness skill (Claude)
   .claude/skills/factory-check   -> harness skill (Claude)
+  .claude/skills/factory-reflect -> harness skill (Claude)
   .agents/skills                 -> harness skills (Antigravity)
   scripts/run_antigravity.sh     -> runner
+  scripts/factory_lint.sh        -> shape checks, free and deterministic
+  scripts/factory_state.sh       -> where the run stopped, what to do next
   specs/  handoffs/              -> empty, with .gitkeep
   factory/                       -> project brain: context, adr, briefs,
-                                    memory, personas, prompt-extra
+                                    memory, improvements, personas,
+                                    prompt-extra
   factory.env                    -> real file, from factory.env.example
 USAGE
 }
@@ -107,8 +111,11 @@ install_one "skills/factory-think"       ".claude/skills/factory-think"
 install_one "skills/factory-spec"        ".claude/skills/factory-spec"
 install_one "skills/factory-build"       ".claude/skills/factory-build"
 install_one "skills/factory-check"       ".claude/skills/factory-check"
+install_one "skills/factory-reflect"     ".claude/skills/factory-reflect"
 install_one "agents/skills"              ".agents/skills"
 install_one "scripts/run_antigravity.sh" "scripts/run_antigravity.sh"
+install_one "scripts/factory_lint.sh"    "scripts/factory_lint.sh"
+install_one "scripts/factory_state.sh"   "scripts/factory_state.sh"
 
 # caveman: work dirs. git needs a file to keep them.
 # factory/personas is empty on purpose - drop a file in to add a lens.
@@ -130,6 +137,7 @@ seed() { # seed <template> <dest-rel>
 }
 seed context.md      "factory/context.md"
 seed memory.md       "factory/memory.md"
+seed improvements.md "factory/improvements.md"
 seed prompt-extra.md "factory/prompt-extra.md"
 
 # caveman: per-project config. never overwrite what is already there.

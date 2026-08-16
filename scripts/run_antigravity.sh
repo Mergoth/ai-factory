@@ -12,6 +12,9 @@ usage: scripts/run_antigravity.sh <slug|handoff-path> [--model M] [--dry-run]
   --model M         use model M. must exist in `agy models`.
   --refresh-models  re-fetch the model list, ignoring the cache.
   --dry-run         print the prompt and the agy command, call nothing.
+  --no-lint         skip the handoff shape check. you are on your own.
+  --no-snapshot     skip the pre-round snapshot of uncommitted work.
+  --force           run even if a lock says a round is already in flight.
 
 config comes from factory.env in repo root (see factory.env.example).
 no model ids are configured - the list comes from `agy models`, cached in
@@ -20,6 +23,10 @@ preferring a different family.
 per-project context in factory/ (context.md, memory.md, adr/, prompt-extra.md,
 briefs/<slug>.md) is passed to the build agent when those files are filled in.
 log goes to handoffs/logs-<timestamp>-<slug>.txt
+
+before each round it checks the handoff's shape, snapshots every uncommitted
+change to .factory-cache/snapshots/, and takes a lock so two rounds cannot run
+at once. after a crash, `scripts/factory_state.sh <slug>` says where it stopped.
 USAGE
 }
 
@@ -30,9 +37,15 @@ TARGET="$1"; shift
 DRY_RUN=0
 MODEL_OVERRIDE=""
 REFRESH_MODELS=0
+NO_LINT=0
+NO_SNAPSHOT=0
+FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)        DRY_RUN=1 ;;
+    --no-lint)        NO_LINT=1 ;;
+    --no-snapshot)    NO_SNAPSHOT=1 ;;
+    --force)          FORCE=1 ;;
     --refresh-models) REFRESH_MODELS=1 ;;
     --model)   shift; MODEL_OVERRIDE="${1:-}"
                [ -n "$MODEL_OVERRIDE" ] || { echo "--model needs a value" >&2; exit 2; } ;;
@@ -71,9 +84,47 @@ SPEC="specs/$SLUG.md"
 [ -f "$HANDOFF" ] || { echo "error: handoff not found: $HANDOFF" >&2; exit 1; }
 [ -n "$TEST_CMD" ] || { echo "error: TEST_CMD not set. copy factory.env.example to factory.env" >&2; exit 1; }
 
+# caveman: TEST_CMD that does not exist burns a whole paid round on
+# "command not found". check the runner is there before calling agy. only when
+# the first word is a plain command - anything with env prefixes, pipes or
+# shell syntax is left alone rather than guessed at.
+TEST_BIN="${TEST_CMD%% *}"
+case "$TEST_CMD" in
+  *'='*|*'|'*|*'&'*|*';'*|*'('*|*'$'*) ;;   # shell syntax, cannot check it
+  *)
+    command -v "$TEST_BIN" >/dev/null 2>&1 || {
+      echo "error: TEST_CMD starts with '$TEST_BIN', which is not on PATH." >&2
+      echo "       fix TEST_CMD in factory.env before spending a round on it." >&2
+      exit 1; }
+    ;;
+esac
+
+# caveman: check the contract's shape before paying for a round against it. a
+# handoff with no done criteria buys nothing, and finding that out costs the
+# whole round. deterministic, free, and it runs before every call to agy.
+LINT="$(dirname "$0")/factory_lint.sh"
+if [ "$NO_LINT" -eq 0 ] && [ -x "$LINT" ]; then
+  if ! "$LINT" "$SLUG" --contract --quiet; then
+    echo >&2
+    echo "error: the handoff for '$SLUG' does not hold up. fix it before spending a round." >&2
+    echo "       re-check with: bash scripts/factory_lint.sh $SLUG" >&2
+    echo "       override with: --no-lint" >&2
+    exit 1
+  fi
+fi
+
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-LOG="handoffs/logs-$TS-$SLUG.txt"
 mkdir -p handoffs
+LOG="handoffs/logs-$TS-$SLUG.txt"
+# caveman: the logs ARE the round counter. two rounds in one second would share
+# a filename, and the second would eat the first - that is a round nobody can
+# see afterwards. wait out the collision rather than renaming: everything else
+# finds the newest log by sorting these names.
+while [ -e "$LOG" ]; do
+  sleep 1
+  TS="$(date -u +%Y%m%dT%H%M%SZ)"
+  LOG="handoffs/logs-$TS-$SLUG.txt"
+done
 
 # caveman: agy does not use shell cwd as workspace. give it absolute paths
 # and --add-dir, or it goes hunting across the whole disk and finds nothing.
@@ -84,11 +135,25 @@ HANDOFF_ABS="$REPO_ROOT/$HANDOFF"
 # only mention files that exist, or agy goes looking for ghosts. a file still
 # carrying the template marker is not filled in yet - feeding agy blank
 # headings is worse than saying nothing.
+#
+# marker is only honoured on LINE 1, where install.sh puts it. matching it
+# anywhere made a filled-in file that merely mentions the marker drop itself,
+# silently, and the builder then re-decided every convention from scratch.
+is_template() { # is_template <abs-path>
+  case "$(head -n 1 "$1" 2>/dev/null)" in
+    *factory:template*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 CONTEXT_BLOCK=""
 add_context() { # add_context <abs-path> <why>
   [ -s "$1" ] || return 0
-  if grep -q 'factory:template' "$1" 2>/dev/null; then
-    echo "note: $(basename "$1") is still the blank template, not sent to agy" >&2
+  if is_template "$1"; then
+    # loud, and on stdout: a dropped context file is invisible in the log and
+    # costs a whole round of the builder re-inventing this project's rules.
+    echo "WARNING: ${1#"$REPO_ROOT"/} still has the factory:template marker on line 1."
+    echo "         it was NOT sent to agy. delete that line once you have filled it in."
     return 0
   fi
   CONTEXT_BLOCK="$CONTEXT_BLOCK
@@ -118,7 +183,7 @@ fi
 # caveman: raw per-project orders, pasted in as-is. skip blank template.
 EXTRA=""
 if [ -s "$REPO_ROOT/factory/prompt-extra.md" ] &&
-   ! grep -q 'factory:template' "$REPO_ROOT/factory/prompt-extra.md"; then
+   ! is_template "$REPO_ROOT/factory/prompt-extra.md"; then
   EXTRA="
 
 Extra rules for this project:
@@ -253,16 +318,73 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-# caveman: header in log so review agent knows what ran.
+# caveman: one round per slug at a time. two agy processes editing one tree is
+# how a good round gets eaten by a bad one, and a resumed agent cannot tell
+# afterwards which write came from where.
+LOCK_DIR="$CACHE_DIR/locks"
+LOCK="$LOCK_DIR/$SLUG.lock"
+mkdir -p "$LOCK_DIR"
+if [ -f "$LOCK" ]; then
+  LPID="$(sed -n 's/^pid=//p' "$LOCK" | head -n 1)"
+  if [ -n "$LPID" ] && kill -0 "$LPID" 2>/dev/null && [ "$FORCE" -eq 0 ]; then
+    echo "error: a round for '$SLUG' is already running (pid $LPID)." >&2
+    echo "       wait for it, or override with --force if you know it is dead." >&2
+    exit 1
+  fi
+  echo "note: clearing a stale lock from pid ${LPID:-?} - that round died before it finished"
+  rm -f "$LOCK"
+fi
+printf 'pid=%s\nstarted=%s\nslug=%s\nlog=%s\n' "$$" "$TS" "$SLUG" "$LOG" > "$LOCK"
+trap 'rm -f "$LOCK"' EXIT INT TERM
+
+# caveman: uncommitted work is the only copy there is. take one before letting
+# agy loose, so a bad round can be undone without losing a good one. tracked
+# changes AND untracked new files - on a greenfield repo the new files ARE the
+# work. ignored files stay out, that is what --exclude-standard means.
+SNAP_DIR="$CACHE_DIR/snapshots"
+SNAPSHOT=""
+if [ "$NO_SNAPSHOT" -eq 0 ]; then
+  mkdir -p "$SNAP_DIR"
+  # a deleted tracked file is "modified" to git but not tarrable - drop those.
+  SNAP_LIST="$SNAP_DIR/.filelist-$SLUG"
+  git ls-files -mo --exclude-standard 2>/dev/null | while IFS= read -r p; do
+    [ -f "$p" ] && printf '%s\n' "$p"
+  done > "$SNAP_LIST" || true
+  SNAP_N="$(grep -c . "$SNAP_LIST" || true)"
+  if [ "${SNAP_N:-0}" -eq 0 ]; then
+    echo "snapshot: nothing uncommitted to save"
+    rm -f "$SNAP_LIST"
+  elif [ "${SNAP_N:-0}" -gt 2000 ]; then
+    echo "warn: $SNAP_N uncommitted files, too many to snapshot. commit or clean first." >&2
+    rm -f "$SNAP_LIST"
+  else
+    SNAPSHOT="$SNAP_DIR/$TS-$SLUG.tar.gz"
+    tar czf "$SNAPSHOT" -T "$SNAP_LIST" 2>/dev/null || {
+      rm -f "$SNAPSHOT"; SNAPSHOT=""; echo "warn: snapshot failed, continuing without one" >&2; }
+    rm -f "$SNAP_LIST"
+    [ -z "$SNAPSHOT" ] || echo "snapshot: $SNAP_N file(s) -> $SNAPSHOT"
+    # keep the last 10 per slug. recovery data, not an archive.
+    (ls -1t "$SNAP_DIR"/*-"$SLUG".tar.gz 2>/dev/null | tail -n +11 | while IFS= read -r old; do
+      rm -f "$old"
+    done) || true
+  fi
+fi
+
+# caveman: header in log so review agent knows what ran. round number counts
+# the logs on disk, so a fresh agent that lost its memory counts the same round
+# an old one was counting.
+ROUND=$(( $(ls -1 handoffs/logs-*-"$SLUG".txt 2>/dev/null | wc -l | tr -d ' ' || true) + 1 ))
 {
   echo "=== antigravity run ==="
   echo "timestamp: $TS"
   echo "slug:      $SLUG"
+  echo "round:     $ROUND"
   echo "spec:      $SPEC"
   echo "handoff:   $HANDOFF"
   echo "models:    $TRY"
   echo "test_cmd:  $TEST_CMD"
   echo "git_head:  $(git rev-parse --short HEAD 2>/dev/null || echo none)"
+  echo "snapshot:  ${SNAPSHOT:-none}"
   echo "======================="
   echo
 } > "$LOG"
@@ -298,11 +420,15 @@ done
 } >> "$LOG"
 
 echo
+echo "round: $ROUND"
 echo "model used: $USED"
 echo "agy exit code: $AGY_EXIT"
 echo "log saved: $LOG"
+[ -z "$SNAPSHOT" ] || echo "pre-round snapshot: $SNAPSHOT"
 if [ "$AGY_EXIT" -ne 0 ]; then
   echo "error: every model in the chain failed to run" >&2
+  echo "       nothing was built. state: bash scripts/factory_state.sh $SLUG" >&2
   exit "$AGY_EXIT"
 fi
 echo "next: run /factory-check $SLUG in Claude Code"
+echo "      lost the thread? bash scripts/factory_state.sh $SLUG"

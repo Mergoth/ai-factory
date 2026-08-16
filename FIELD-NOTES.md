@@ -5,6 +5,14 @@ caveman: what broke, what held, what to change. written from one real project, n
 Source run: `second-brain-mcp`, 2026-08-16. Greenfield repo → 119 tests, 11 MCP tools, 3
 increments, 6 agy rounds, all on one model tier. Engine at `a64b6f6`.
 
+**Status: applied.** Everything below is now in the harness — the check-side steps, the spec
+preflight, the persona instructions, PRINCIPLES #3 and #12–16, the runner's marker and
+`TEST_CMD` guards, and the two deterministic scripts (`factory_lint.sh`, `factory_state.sh`)
+that took over the checks a rule can decide and the run state an agent used to hold in its
+head. This document is kept as the record of where those rules came from, and as
+the worked example of what `/factory-reflect` now produces after every run. Future runs write
+their version of this to `factory/improvements.md` in the project, not here.
+
 The headline finding, because everything else follows from it:
 
 > **Every single agy round passed its own tests and still contained a real defect.** Six rounds,

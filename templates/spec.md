@@ -29,3 +29,8 @@ Out:
 
 Anything the build agent should know about this repo that is not obvious from
 the files - conventions, gotchas, a pattern to follow.
+
+Standing gotchas worth repeating when they apply:
+
+- Python: `pytest` exits 5 on an empty collection. On a greenfield round 1 that
+  is a normal empty suite, not a failed run.

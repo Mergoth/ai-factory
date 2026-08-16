@@ -39,7 +39,10 @@ caveman: four heads read code alone. then one head joins them. write why, not ho
    - this instruction:
      > You are analysing, not just locating. Read the files that matter in full.
      > Every finding cites something real — a path, a line, a test name, an ADR
-     > number. You cannot talk to the user and must not try; unknowns become
+     > number. If this change operates on real data that exists on this machine,
+     > read a representative sample of it, even when it lives outside the repo.
+     > The spec describes what its author believed; the data shows what is true.
+     > Cite paths. You cannot talk to the user and must not try; unknowns become
      > findings or your one QUESTION. Return only the block your charter's
      > Return section defines, nothing else.
 

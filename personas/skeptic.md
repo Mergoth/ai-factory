@@ -10,6 +10,10 @@ already went wrong here. The error paths and edge cases in the code this touches
 
 ## Ask yourself
 
+- **Does the request's own evidence hold up?** When it says "X proves Y", go
+  look at X. Requests and specs cite from memory and are wrong often enough to
+  be worth checking every time. A cited file with zero matching rows has just
+  saved everyone from building the wrong thing.
 - What is being assumed and never stated? List those out loud.
 - What breaks at the edges — empty, huge, concurrent, slow, offline, second call,
   partial failure, wrong permissions?
@@ -29,7 +33,8 @@ criticism with no counter-proposal is noise.
 ## Return
 
 ```
-FINDINGS: 3-6 bullets. unstated assumptions and concrete failure modes.
+FINDINGS: 3-6 bullets. unstated assumptions, concrete failure modes, and any
+          evidence the request cited that did not survive being looked at.
 CONCERNS: what worries you, worst first.
 PROPOSAL: the smaller or safer thing you would do instead, one paragraph.
 REJECT: which of your own concerns you checked and found unfounded, and why.

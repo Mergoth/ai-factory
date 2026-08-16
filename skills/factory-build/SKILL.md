@@ -5,12 +5,38 @@ description: Use to run the whole factory loop without babysitting it - launches
 
 # Factory build agent
 
-caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
+caveman: ask files where run stopped. launch agy, wait, check, launch again if
+broken. stop when pass or cap.
+
+This skill both **starts and resumes**. Sessions die - context runs out, agy
+times out, a laptop sleeps mid-round. None of the run's state lives in your head,
+so re-running `/factory-build <slug>` on a half-finished run picks it up where it
+stopped instead of starting it over (principle 15).
 
 ## Steps
 
-1. **Find the target.** Slug given -> use it. No slug -> newest handoff in
-   `handoffs/`. Print the slug and the handoff path.
+1. **Find the target and ask where it stopped.** Slug given -> use it. No slug ->
+   newest handoff in `handoffs/`. Then, before anything else:
+
+   ```
+   bash scripts/factory_state.sh <slug>
+   ```
+
+   Free, deterministic, reads only files. Print its output and **obey its
+   `next:`**:
+
+   | `next:` | What you do |
+   |---|---|
+   | `spec` | no handoff. Stop and send them to `/factory-spec`. |
+   | `fix` | the contract is malformed. Run `scripts/factory_lint.sh <slug>`, fix the handoff, do not launch agy. |
+   | `wait` | a round is running **right now**. Do not start another - that double-spends and two agy processes race the same tree. Wait for it, then re-read the state. |
+   | `check` | a round already ran and nobody judged it. Go to step 5, not step 3. That round is paid for; re-running it burns a second one for nothing. |
+   | `build` | a round is owed. Continue to step 2. |
+   | `cap` | `MAX_ROUNDS` used and still failing. Stop, report, ask - never raise the cap yourself. |
+   | `done` | the last check said Success. Go to step 8 and reflect; do not rebuild. |
+
+   `rounds_run` in that output is the round counter, and it comes off the disk.
+   Use it - not your own count, which is gone the moment the session is.
 
 2. **Read the handoff out loud first.** Print its Goal and Done criteria to the
    user before launching anything. A wrong handoff wastes a whole agy run, and
@@ -57,20 +83,32 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
    That covers a dead id or a bad quota; it does not cover a weak model producing
    bad code. Judging that is your job in the next step.
 
+   Before calling agy it also checks the handoff's shape, takes a lock so a
+   second round cannot start on top of this one, and tars every uncommitted file
+   into `.factory-cache/snapshots/`. That snapshot is the undo button for a round
+   that makes things worse - `factory_state.sh` prints the exact `tar xzf` line
+   that restores it. If you come back to a round that never finished, the state
+   script tells you whether the process is still alive or the lock is stale.
+
 5. **Verify.** Read `.claude/skills/factory-check/SKILL.md` and follow its
    steps 2 through 8 exactly. That is the single source of verification truth -
    do not reimplement the checks here. It appends a status block to the handoff.
    Its walkthrough-versus-diff check is not optional: a round where agy described
    code it never wrote is a failed round even if the tests happen to pass.
 
-6. **Decide.**
+6. **Decide.** Re-run `bash scripts/factory_state.sh <slug>` first - it now
+   includes this round, and its `next:` is the decision you are about to make.
+
    - `Status: Success` -> stop. Say `DONE - <slug> is complete.` Print the round
      count, the model that did it, and `git diff --stat`.
-   - `Status: Needs fix` and rounds used < `MAX_ROUNDS` -> go to step 3 again,
+   - `Status: Needs fix` and `rounds_run` < `MAX_ROUNDS` -> go to step 3 again,
      re-picking the model. The next-fix bullets are already in the handoff, so
      agy picks them up from the same contract. No prompt changes needed.
    - Round cap hit -> stop. Say `STOPPED at <n> rounds.` Summarise what is still
      failing and what you would try next. Do not silently keep going.
+
+   Stopping means no more agy rounds. Steps 7 and 8 still run - they cost
+   nothing and a capped run is the one most worth writing down.
 
 7. **Write down what you learned.** If this task taught something a future run
    would want, append one line to `factory/memory.md`. Only real lessons:
@@ -83,10 +121,18 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
    Facts that are always true belong in `factory/context.md` instead, and rules
    future code must obey belong in an ADR.
 
-8. **Report at the end**: rounds used, model per round, final status, files
-   changed, last test line, and anything you want a human to look at. Finish with
-   agy's `verify by hand` lines from the final walkthrough - after an unattended
-   loop, the one thing a human wants is a command that shows them it works.
+8. **Reflect on the run.** The loop has ended - `Success` or cap, both count.
+   Read `.claude/skills/factory-reflect/SKILL.md` and follow it. It appends
+   proposals for improving the factory itself to `factory/improvements.md`,
+   citing what actually happened in these rounds. Do not skip it on a capped
+   run: those teach the most, and the lesson is worthless a week later when
+   nobody remembers which round did what (principle 16).
+
+9. **Report at the end**: rounds used, model per round, final status, files
+   changed, last test line, and anything you want a human to look at. Then the
+   proposals `/factory-reflect` wrote, by title. Finish with agy's
+   `verify by hand` lines from the final walkthrough - after an unattended loop,
+   the one thing a human wants is a command that shows them it works.
 
 ## Rules
 
@@ -102,5 +148,19 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
   are signals the contract is wrong, not that another round will help.
 - Write no implementation code yourself, in any round. If the fix is obvious,
   it goes in the handoff as a next-fix bullet and agy does it. The moment you
-  patch the code yourself, nobody is grading the builder any more.
+  patch the code yourself, nobody is grading the builder any more (principle 2)
+  and the expensive tokens are doing the cheap work (principle 12).
+- Scaffolding, fixtures, config files and boilerplate are agy's too. A round
+  that produces only those is a cheap round on a cheap model, which is still
+  cheaper than Claude typing them.
+- The two things worth spending Claude tokens on are the contract going in and
+  the verdict coming out. When a round is running, you are waiting - do not
+  fill the time by editing the repo.
 - Never commit, branch, or push. The diff stays in the working tree.
+- Never count rounds in your head. `factory_state.sh` counts logs on disk, which
+  is the only counter that survives you. A resumed session that recounts from
+  zero spends the cap twice (principle 15).
+- A round you did not start is still a round. If the state says `check`, judge
+  it before building - it was already paid for, whoever launched it.
+- Never delete a snapshot or a log to make the state look tidy. They are what a
+  resumed session reads instead of asking you.

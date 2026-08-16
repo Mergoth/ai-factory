@@ -9,6 +9,9 @@ Rules for whoever writes here:
 - delete lines that stopped being true. a wrong memory costs more than none.
 - keep under ~40 lines. when it grows past that, merge and cut.
 - conventions and commands do NOT go here - those belong in `context.md`.
+- lessons about the harness itself do NOT go here either - a check that missed a
+  defect, a step that wasted a round. those go in `improvements.md`, with the
+  evidence, and get carried upstream.
 
 <!-- example shape, delete these:
 - flash models keep missing the retry decorator in api/; use a pro tier for anything in that dir

@@ -32,9 +32,21 @@ Must pass:
 
 ## Done criteria
 
+<!-- each one runs the code where it can. a grep checks spelling, not behaviour.
+     ask what a truncated or literal-minded run could do to tick this box
+     without doing the work - see PRINCIPLES #13. -->
+
 - [ ] checkable statement one
 - [ ] checkable statement two
 - [ ] tests above pass
+
+## Environment limits
+
+<!-- what cannot be verified on this machine: no docker daemon, no network, no
+     credentials. write the artefact, do not claim it works, list it under
+     "not covered" in the walkthrough. delete this section if there are none. -->
+
+- thing that cannot be verified here, and what to do instead
 
 ---
 
