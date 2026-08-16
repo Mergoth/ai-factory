@@ -4,17 +4,20 @@ Small AI factory for one repo. Claude Code writes the spec, the
 [Antigravity CLI](https://antigravity.google) (`agy`) writes the code, Claude
 Code checks the result.
 
-Three moving parts, no magic:
+Four moving parts, no magic:
 
 | Part | Who runs it | What it does |
 |---|---|---|
-| `/factory-spec` | Claude Code | reads the code, writes `specs/<slug>.md` + `handoffs/<ts>-<slug>.md` |
+| `/factory-think` | Claude Code | runs four personas in parallel over the code, writes `factory/briefs/<slug>.md` — the WHY |
+| `/factory-spec` | Claude Code | reads the brief and the code, writes `specs/<slug>.md` + `handoffs/<ts>-<slug>.md` |
 | `/factory-build` | Claude Code | launches `agy`, waits, verifies, re-runs until pass or cap |
 | `scripts/run_antigravity.sh` | Claude or your shell | calls `agy` with that contract, tees the log to `handoffs/` |
-| `/factory-check` | Claude Code | re-runs the tests, appends a Success / Needs fix block to the handoff |
+| `/factory-check` | Claude Code | re-runs the tests, checks the walkthrough against the diff, appends a verdict |
 
-The handoff file is the contract. It is the only thing these parts share, which
-is what lets Claude and `agy` hand work back and forth without a shared session.
+Files are the only thing these parts share, which is what lets Claude and `agy`
+hand work back and forth without a shared session. The rules they all obey are in
+[`PRINCIPLES.md`](PRINCIPLES.md) — one page, worth reading before you change
+anything here.
 
 ## Install into a project
 
@@ -33,13 +36,20 @@ then creates the working directories:
 ```
 your-project/
   factory-engine/                       # submodule, the harness
+  .claude/skills/factory-think    -> factory-engine/skills/factory-think
   .claude/skills/factory-spec     -> factory-engine/skills/factory-spec
   .claude/skills/factory-build    -> factory-engine/skills/factory-build
   .claude/skills/factory-check    -> factory-engine/skills/factory-check
   .agents/skills                  -> factory-engine/agents/skills
   scripts/run_antigravity.sh      -> factory-engine/scripts/run_antigravity.sh
   factory.env                     # real file, yours, per project
-  factory/                        # YOUR project brain - context, ADRs, memory
+  factory/                        # YOUR project brain
+    context.md                    #   how this repo works
+    adr/                          #   binding decisions
+    briefs/                       #   why each feature exists
+    memory.md                     #   lessons from past runs
+    personas/                     #   extra lenses, empty by default
+    prompt-extra.md               #   raw orders for the builder
   specs/                          # feature specs
   handoffs/                       # contracts + logs
   .factory-cache/                 # gitignored, cached model list
@@ -71,9 +81,11 @@ seeds it; fill in what is useful and skip the rest.
 
 | File | What it is | Who reads it |
 |---|---|---|
-| `factory/context.md` | stack, commands, layout, conventions, gotchas | spec, builder, checker |
-| `factory/adr/` | architecture decisions, numbered. **Binding.** | spec, builder, checker |
+| `factory/context.md` | stack, commands, layout, conventions, gotchas | all |
+| `factory/adr/` | architecture decisions, numbered. **Binding.** | all |
 | `factory/memory.md` | one-line lessons from past runs | builder, spec |
+| `factory/briefs/` | why each feature was built, what was rejected | all |
+| `factory/personas/` | extra lenses for `/factory-think` | think |
 | `factory/prompt-extra.md` | raw orders pasted into the builder prompt | builder |
 
 Each has a distinct job, and keeping them apart is what stops the whole thing
@@ -89,6 +101,14 @@ turning into one sprawling prompt:
   retry decorator in `api/`." `/factory-build` appends a line when a round
   teaches something, and is told to keep it under ~40 lines and delete stale
   entries — a wrong memory costs more than no memory.
+- **`briefs/`** — written by `/factory-think`, one per feature. The only file
+  that answers "why is it like this" six months later, and the only one holding
+  the alternatives you rejected, so nobody re-proposes them.
+- **`personas/`** — drop a markdown file here and it joins the `/factory-think`
+  round table on the next run. No re-install, nothing to register; a file whose
+  name matches a built-in replaces it. Add `security.md` or `data.md` when the
+  default four keep missing a concern this project actually has. See
+  [`personas/README.md`](personas/README.md).
 - **`prompt-extra.md`** — the escape hatch, when you want to tell the builder
   something directly without forking the harness.
 
@@ -99,13 +119,44 @@ Delete the marker line when you fill one in. Nothing here is required; an empty
 
 ## Use it
 
-**1. Spec.** In Claude Code:
+**1. Think.** In Claude Code:
+
+```
+/factory-think add rate limiting to the public API
+```
+
+Four personas — **product, architect, skeptic, operator** — read the codebase in
+parallel, blind to each other, each as a read-only subagent so none of them can
+touch code. Then Claude reconciles them and writes:
+
+```
+factory/briefs/api-rate-limit.md
+```
+
+The brief holds what the spec cannot: why this is worth building, what "done"
+looks like from outside, which alternatives were rejected and why, and every
+assumption taken where the request was ambiguous.
+
+Blind and parallel is the whole trick. Run in sequence they read each other and
+converge on whatever the first one said; run blind they disagree, and the
+disagreements are the findings. Consensus that arrives instantly usually means
+four agents read the same README.
+
+They will not interrogate you. Personas cannot ask anything at all; only the
+synthesis step can, capped at **three questions, asked once, together**, and only
+where two readings genuinely produce different code. Everything else becomes a
+line under Assumptions, which you can veto at a glance.
+
+Skip this step for a rename or a typo — four subagents to decide on a rename is
+theatre, and the skill will tell you so itself.
+
+**2. Spec.** Chains automatically from the brief, or run it alone:
 
 ```
 /factory-spec add rate limiting to the public API
 ```
 
-Claude reads the code and writes two files:
+Claude reads the brief and the code and writes two files:
 
 ```
 specs/api-rate-limit.md
@@ -116,7 +167,7 @@ Read the handoff before running anything. It has Goal, Files to touch, Tests to
 run, Done criteria. If it is wrong, say so and Claude rewrites it — that is far
 cheaper than letting `agy` build the wrong thing.
 
-**2. Build.** In Claude Code:
+**3. Build.** In Claude Code:
 
 ```
 /factory-build api-rate-limit
@@ -143,6 +194,27 @@ see the exact prompt and command without calling `agy`.
 
 `agy` changes code and runs tests. It does not commit, branch, or push — the
 diff is left in your working tree for you to review.
+
+### The walkthrough
+
+`agy` does not just report pass/fail. Its report ends with a walkthrough:
+
+```
+WALKTHROUGH:
+  how it works    - the flow after the change, in order, naming real functions
+  why             - each choice a reviewer would question, and the reason
+  verify by hand  - exact commands to watch it work, not the test suite
+  not covered     - what it did not test, and what it is unsure about
+```
+
+This is not decoration. `/factory-check` reads it **against `git diff`**, which
+catches a failure class the tests cannot: a walkthrough describing code that was
+never written. That is `Needs fix` regardless of a green suite, as is a "why"
+that contradicts an ADR or re-proposes something the brief already rejected.
+
+The other half is for you. After an unattended loop, "verify by hand" is the one
+thing worth having — a command that shows you the feature working, rather than a
+test suite asserting that it does.
 
 ### Model selection
 
@@ -189,20 +261,22 @@ the prompt:
   the actual test run are what count — which is why `/factory-check` re-runs
   the tests itself.
 
-**3. Check.** Back in Claude Code:
+**4. Check.** Back in Claude Code:
 
 ```
 /factory-check api-rate-limit
 ```
 
-Claude reads the spec, the handoff, the log and `git diff`, **re-runs the tests
-itself** rather than trusting the log, and appends a block to the handoff:
+Claude reads the brief, the spec, the handoff, the log and `git diff`, **re-runs
+the tests itself** rather than trusting the log, checks the walkthrough against
+the diff, and appends a block to the handoff:
 
 ```markdown
 ## Check 20260815T145533Z
 
 Status: Needs fix
 Tests: 2 failed, 41 passed
+Walkthrough: matches diff
 
 - [x] limiter rejects over 100 req/min
 - [ ] 429 response includes Retry-After header
@@ -213,8 +287,12 @@ Tests: 2 failed, 41 passed
 - un-skip test_burst_allowance and make it pass
 ```
 
-**4. Loop.** `/factory-build` already loops, so normally there is nothing to do
-here. If you are driving by hand, `Needs fix` means run step 2 again — the
+With a brief present it also asks the harder question: is "What done looks like"
+actually true now? Code that ticks every checkbox while missing the point is the
+expensive failure, and the checkbox list is exactly where it hides.
+
+**5. Loop.** `/factory-build` already loops, so normally there is nothing to do
+here. If you are driving by hand, `Needs fix` means run step 3 again — the
 next-fix bullets are in the handoff, so `agy` picks them up on the same
 contract. Repeat until `Status: Success`.
 
@@ -230,7 +308,12 @@ the status is Success, which is your signal to stop the loop.
 
 ### Which one to use
 
-- `/factory-build` — the normal path. Hands-off until it passes or gives up.
+- `/factory-think` — when you are not yet sure what should be built, or the
+  request is vague enough that two people would build different things.
+- `/factory-spec` straight away — when you already know exactly what you want and
+  the brief would just be ceremony.
+- `/factory-build` — the normal path once a handoff exists. Hands-off until it
+  passes or gives up.
 - `run_antigravity.sh` + `/factory-check` — when you want to inspect the diff
   between every round, or you are debugging the harness itself.
 - `/loop /factory-check` — when something else is running the builds and you
@@ -249,11 +332,14 @@ the status is Success, which is your signal to stop the loop.
 - **Separation of duties:** `agy` never edits `specs/` or `handoffs/`;
   `/factory-check` and `/factory-build` never edit code. Nothing grades its own
   work.
+- **Personas are read-only by construction.** They run as `Explore` subagents,
+  which have no write tools — a thinking step cannot quietly become a building
+  step, and that is enforced by the harness rather than by asking nicely.
 - **Bounded loop:** `/factory-build` stops at `MAX_ROUNDS` (default 3), and
   earlier if two rounds produce the same failure. It will not spend your money
   in a circle, and it asks before raising its own cap.
-- **No secrets:** `factory.env` holds a test command, a model name, and a
-  timeout. Keep credentials out of it — it is committed to your project repo.
+- **No secrets:** `factory.env` holds a test command, a round cap, and timeouts.
+  Keep credentials out of it — it is committed to your project repo.
 - **Logs are gitignored** (`handoffs/logs-*.txt`) since they can be long and may
   echo local paths. The handoff and its status blocks are committed; those are
   the record worth keeping.
@@ -262,17 +348,24 @@ the status is Success, which is your signal to stop the loop.
 
 - `agy` on `PATH` — [Antigravity CLI](https://antigravity.google)
 - `git`, `bash`, `awk`
-- Claude Code, for the two skills
+- Claude Code, for the four skills
 
 ## Layout of this repo
 
 ```
+PRINCIPLES.md                  # the rules every skill obeys
 install.sh                     # symlink harness into a target repo
+skills/factory-think/SKILL.md  # Claude: run personas, write brief
 skills/factory-spec/SKILL.md   # Claude: write spec + handoff
 skills/factory-build/SKILL.md  # Claude: drive agy, loop, verify
 skills/factory-check/SKILL.md  # Claude: verify, write status
+personas/product.md            # lens: who hurts, what done looks like
+personas/architect.md          # lens: where it lands, what it couples to
+personas/skeptic.md            # lens: what it assumes, where it breaks
+personas/operator.md           # lens: test, fail loudly, roll back
 scripts/run_antigravity.sh     # call agy, tee log
 agents/skills/                 # agy-side skills (empty by design)
+templates/brief.md             # shape of a brief
 templates/spec.md              # shape of a spec
 templates/handoff.md           # shape of a handoff
 templates/context.md           # seeds factory/context.md

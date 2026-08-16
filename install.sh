@@ -12,12 +12,15 @@ usage: bash factory-engine/install.sh [target-repo-dir] [--copy] [--force]
   --force          replace real files that are in the way, not just symlinks.
 
 creates in the target repo:
+  .claude/skills/factory-think   -> harness skill (Claude)
   .claude/skills/factory-spec    -> harness skill (Claude)
   .claude/skills/factory-build   -> harness skill (Claude)
   .claude/skills/factory-check   -> harness skill (Claude)
   .agents/skills                 -> harness skills (Antigravity)
   scripts/run_antigravity.sh     -> runner
   specs/  handoffs/              -> empty, with .gitkeep
+  factory/                       -> project brain: context, adr, briefs,
+                                    memory, personas, prompt-extra
   factory.env                    -> real file, from factory.env.example
 USAGE
 }
@@ -100,6 +103,7 @@ install_one() { # install_one <src-rel-to-harness> <dest-rel-to-repo>
   echo "  link  $dest -> $target"
 }
 
+install_one "skills/factory-think"       ".claude/skills/factory-think"
 install_one "skills/factory-spec"        ".claude/skills/factory-spec"
 install_one "skills/factory-build"       ".claude/skills/factory-build"
 install_one "skills/factory-check"       ".claude/skills/factory-check"
@@ -107,7 +111,8 @@ install_one "agents/skills"              ".agents/skills"
 install_one "scripts/run_antigravity.sh" "scripts/run_antigravity.sh"
 
 # caveman: work dirs. git needs a file to keep them.
-for d in specs handoffs factory/adr; do
+# factory/personas is empty on purpose - drop a file in to add a lens.
+for d in specs handoffs factory/adr factory/briefs factory/personas; do
   mkdir -p "$REPO_ROOT/$d"
   [ -f "$REPO_ROOT/$d/.gitkeep" ] || touch "$REPO_ROOT/$d/.gitkeep"
   echo "  dir   $d/"
@@ -148,7 +153,7 @@ echo
 echo "done."
 echo "next:"
 echo "  1. edit $REPO_ROOT/factory.env and set TEST_CMD"
-echo "  2. in Claude Code:  /factory-spec <what you want built>"
+echo "  2. in Claude Code:  /factory-think <what you want built>  (personas -> brief)"
 echo "  3. in Claude Code:  /factory-build <slug>   (drives agy, loops, verifies)"
 echo
 echo "manual route, if you want to drive it yourself:"

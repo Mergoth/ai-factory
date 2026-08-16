@@ -15,7 +15,9 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
 2. **Read the handoff out loud first.** Print its Goal and Done criteria to the
    user before launching anything. A wrong handoff wastes a whole agy run, and
    this is the cheapest moment to catch it. Skim `factory/memory.md` too - it is
-   short, and it is where the last rounds' mistakes are written down. Then start
+   short, and it is where the last rounds' mistakes are written down. If
+   `factory/briefs/<slug>.md` exists, read it: its Rejected list tells you when a
+   round has drifted back to an option that was already thrown out. Then start
    round 1.
 
 3. **Pick the model.** Run `agy models` and read the real list. Never pass an
@@ -50,14 +52,16 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
    You are re-invoked when it exits. Do not poll in a tight loop, and do not
    start a second round while one is still running.
 
-   The script validates the model against `agy models` and falls through
-   `AGY_MODELS` if agy itself fails to run. That covers a dead id or a bad
-   quota; it does not cover a weak model producing bad code. Judging that is
-   your job in the next step.
+   The script validates the model against `agy models` and falls through to
+   other models - preferring a different family - if agy itself fails to run.
+   That covers a dead id or a bad quota; it does not cover a weak model producing
+   bad code. Judging that is your job in the next step.
 
 5. **Verify.** Read `.claude/skills/factory-check/SKILL.md` and follow its
-   steps 2 through 6 exactly. That is the single source of verification truth -
+   steps 2 through 8 exactly. That is the single source of verification truth -
    do not reimplement the checks here. It appends a status block to the handoff.
+   Its walkthrough-versus-diff check is not optional: a round where agy described
+   code it never wrote is a failed round even if the tests happen to pass.
 
 6. **Decide.**
    - `Status: Success` -> stop. Say `DONE - <slug> is complete.` Print the round
@@ -80,7 +84,9 @@ caveman: launch agy, wait, check, launch again if broken. stop when pass or cap.
    future code must obey belong in an ADR.
 
 8. **Report at the end**: rounds used, model per round, final status, files
-   changed, last test line, and anything you want a human to look at.
+   changed, last test line, and anything you want a human to look at. Finish with
+   agy's `verify by hand` lines from the final walkthrough - after an unattended
+   loop, the one thing a human wants is a command that shows them it works.
 
 ## Rules
 

@@ -17,8 +17,8 @@ config comes from factory.env in repo root (see factory.env.example).
 no model ids are configured - the list comes from `agy models`, cached in
 .factory-cache/. if agy fails to run, the script falls back to other models,
 preferring a different family.
-per-project context in factory/ (context.md, memory.md, adr/, prompt-extra.md)
-is passed to the build agent when those files are filled in.
+per-project context in factory/ (context.md, memory.md, adr/, prompt-extra.md,
+briefs/<slug>.md) is passed to the build agent when those files are filled in.
 log goes to handoffs/logs-<timestamp>-<slug>.txt
 USAGE
 }
@@ -97,9 +97,12 @@ add_context() { # add_context <abs-path> <why>
 }
 add_context "$REPO_ROOT/factory/context.md" "how this project is built. follow it."
 add_context "$REPO_ROOT/factory/memory.md"  "lessons from past runs. do not repeat those mistakes."
+add_context "$REPO_ROOT/factory/briefs/$SLUG.md" "why this is being built, and what was already rejected. do not re-propose a rejected option."
 
+# caveman: only real ADRs count. a dir holding just .gitkeep is not decisions,
+# and telling agy "binding architecture" about nothing is a lie it will act on.
 ADR_DIR="$REPO_ROOT/factory/adr"
-if [ -d "$ADR_DIR" ] && [ -n "$(ls -A "$ADR_DIR" 2>/dev/null)" ]; then
+if [ -d "$ADR_DIR" ] && [ -n "$(find "$ADR_DIR" -maxdepth 1 -name '*.md' -print -quit 2>/dev/null)" ]; then
   CONTEXT_BLOCK="$CONTEXT_BLOCK
   $ADR_DIR/
       architecture decisions. binding. if the task needs you to break one,
@@ -153,13 +156,25 @@ The handoff is the contract. Do exactly this:
 6. Do not edit anything under specs/ or handoffs/ - those belong to the
    review agent.
 
-End your reply with a short report in this exact shape:
+End your reply with a report in this exact shape:
 
 RESULT: PASS or FAIL
 TESTS: the last line of test output
 CHANGED: one line per file you changed
 BLOCKED: anything you could not do, or "none"
-LEARNED: one line worth remembering next time, or "none"$EXTRA
+LEARNED: one line worth remembering next time, or "none"
+WALKTHROUGH:
+  how it works: the flow after your change, in order, 3-8 lines. name the real
+    functions and files a reader would open.
+  why: each choice a reviewer would question, and your reason. include what you
+    considered and did not do.
+  verify by hand: exact commands a human runs to watch it work. not the test
+    suite - something they can see.
+  not covered: what you did not test, and what you are unsure about.
+
+The walkthrough is checked against the actual diff. Describe only what you really
+changed - an accurate "I could not finish X" beats a confident description of
+code that is not there.$EXTRA
 PROMPT_END
 )"
 

@@ -10,6 +10,13 @@ caveman: read code, write spec, write handoff, stop. no code changes.
 ## Steps
 
 1. **Read the project brain first**, before the code. Skip any that do not exist:
+   - `factory/briefs/<slug>.md` - the WHY, from `/factory-think`. If it exists it
+     is your starting point: Approach is what you spec, Rejected is what you must
+     not quietly re-propose, Assumptions carry into the spec. If it does not
+     exist and the request is more than a small obvious change, stop and offer
+     `/factory-think <request>` first - a spec built on an unexamined request is
+     the expensive kind of wrong.
+   - `factory-engine/PRINCIPLES.md` - the rules that do not change
    - `factory/context.md` - stack, commands, conventions, gotchas
    - `factory/adr/` - architecture decisions. Binding. A spec that violates an
      ADR is a broken spec. If the request genuinely requires breaking one, say
@@ -30,7 +37,9 @@ caveman: read code, write spec, write handoff, stop. no code changes.
    and write a new handoff.
 
 5. **Write `specs/<slug>.md`** using `factory-engine/templates/spec.md` as the shape.
-   The spec is the durable description of what the feature is.
+   The spec is the durable description of what the feature is. Link the brief in
+   the header if there is one, and do not copy its reasoning across - WHY lives in
+   one file, and a duplicated rationale is one that will go stale.
 
 6. **Write `handoffs/<timestamp>-<slug>.md`** using `factory-engine/templates/handoff.md`.
    Timestamp comes from `date -u +%Y%m%dT%H%M%SZ`. The handoff is the contract

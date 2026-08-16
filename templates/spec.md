@@ -2,10 +2,12 @@
 
 Slug: `<slug>`
 Written: <YYYY-MM-DD>
+Brief: `factory/briefs/<slug>.md`   <!-- delete this line if there is no brief -->
 
 ## Problem
 
-What is wrong or missing today. Two or three sentences.
+What is wrong or missing today. Two or three sentences. The full reasoning lives
+in the brief - do not restate it here.
 
 ## Solution
 
