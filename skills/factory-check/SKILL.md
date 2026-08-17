@@ -104,7 +104,9 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    - tests deleted, skipped, or weakened instead of fixed
    - files changed that the handoff did not list, with no reason given
    - secrets, keys, tokens, or absolute local paths added
-   - `specs/`, `handoffs/`, or `factory-engine/` edited by agy (it must not touch those)
+   - `specs/`, `handoffs/`, or the engine itself edited by agy (it must not touch
+     those - in self mode the engine is in scope, but only when the handoff
+     says so)
    - code that satisfies the letter of a criterion but not the goal
    - **an ADR broken.** Name the ADR in the bullet. This is `Needs fix` even
      when every test passes - tests do not encode architecture.

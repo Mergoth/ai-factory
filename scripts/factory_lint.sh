@@ -29,6 +29,15 @@ exit 2 = usage error
 USAGE
 }
 
+# caveman: find the engine through this script's own symlink, then load the
+# shared bones. this is the only duplicated block in the scripts, and it has to
+# be: it is what makes sharing possible at all.
+SELF="$0"; while [ -L "$SELF" ]; do L="$(readlink "$SELF")"
+  case "$L" in /*) SELF="$L" ;; *) SELF="$(dirname "$SELF")/$L" ;; esac; done
+FACTORY_ENGINE="$(cd "$(dirname "$SELF")/.." && pwd -P)"
+# shellcheck source=factory_common.sh
+. "$FACTORY_ENGINE/scripts/factory_common.sh"
+
 SLUG=""
 ALL=0
 QUIET=0
@@ -45,13 +54,10 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "error: not inside a git repo" >&2; exit 1; }
+REPO_ROOT="$(factory_repo_root)" || true
+[ -n "$REPO_ROOT" ] || { echo "error: not inside a git repo" >&2; exit 1; }
 cd "$REPO_ROOT"
-
-TEST_CMD=""
-# shellcheck source=/dev/null
-[ -f factory.env ] && . ./factory.env
+factory_load_env "$REPO_ROOT"
 
 FINDINGS="$(mktemp "${TMPDIR:-/tmp}/factory-lint.XXXXXX")"
 trap 'rm -f "$FINDINGS"' EXIT
@@ -73,18 +79,10 @@ need_heading() { # need_heading <file> <heading>
   err "$1: missing section '$2'"
 }
 
-# caveman: template marker only counts on line 1 - same rule the runner uses.
-is_template() {
-  case "$(head -n 1 "$1" 2>/dev/null)" in
-    *factory:template*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 lint_brain() {
   for f in factory/context.md factory/memory.md factory/prompt-extra.md; do
     [ -s "$f" ] || continue
-    if is_template "$f"; then
+    if factory_is_template "$f"; then
       warn "$f: still has the factory:template marker on line 1, so it is NOT sent to agy"
     fi
   done
@@ -177,10 +175,9 @@ lint_handoff() { # lint_handoff <path>
 
 lint_logs() { # lint_logs <slug>
   local newest n
-  # ls fails on a glob with no match, and pipefail turns that into an exit.
-  n="$(ls -1 handoffs/logs-*-"$1".txt 2>/dev/null | wc -l | tr -d ' ' || true)"
+  n="$(factory_count_logs "$1")"
   [ "$n" -gt 0 ] || return 0
-  newest="$(ls -1 handoffs/logs-*-"$1".txt 2>/dev/null | sort | tail -n 1)"
+  newest="$(factory_newest_log "$1")"
 
   # caveman: a truncated run and a clean run look identical from outside.
   # the only honest tells are structural - see PRINCIPLES #3.
@@ -201,7 +198,7 @@ lint_logs() { # lint_logs <slug>
 
 lint_slug() { # lint_slug <slug>
   local slug="$1" handoff
-  handoff="$(ls -1 handoffs/*-"$slug".md 2>/dev/null | sort | tail -n 1 || true)"
+  handoff="$(factory_newest_handoff "$slug")"
   printf -- '--- %s\n' "$slug" >> "$FINDINGS"
   lint_brief "$slug"
   lint_spec  "$slug"
@@ -216,15 +213,14 @@ lint_slug() { # lint_slug <slug>
 lint_brain
 
 if [ "$ALL" -eq 1 ]; then
-  SLUGS="$(ls -1 handoffs/*.md 2>/dev/null | sed -e 's|.*/||' -e 's|\.md$||' -e 's|^[0-9TZ]*-||' | sort -u || true)"
+  SLUGS="$(factory_all_slugs)"
   [ -n "$SLUGS" ] || { echo "no handoffs found in handoffs/"; exit 0; }
   for s in $SLUGS; do lint_slug "$s"; done
 else
   if [ -z "$SLUG" ]; then
-    newest="$(ls -1 handoffs/*.md 2>/dev/null | sort | tail -n 1 || true)"
-    [ -n "$newest" ] || { echo "no handoffs found in handoffs/"; exit 0; }
-    base="$(basename "$newest" .md)"
-    SLUG="${base#*-}"
+    SLUG="$(factory_default_slug)" ||
+      { echo "no handoffs found in handoffs/"; exit 0; }
+    [ -n "$SLUG" ] || { echo "no handoffs found in handoffs/"; exit 0; }
   fi
   lint_slug "$SLUG"
 fi

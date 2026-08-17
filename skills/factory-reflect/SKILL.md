@@ -1,6 +1,6 @@
 ---
 name: factory-reflect
-description: Use after a full factory run has ended - passed or hit the round cap - to reflect on the run itself and write proposals for improving the factory into factory/improvements.md. Reads every status block, every agy log and the final diff, sorts each lesson to context, memory, an ADR or the engine, and never edits factory-engine/. Triggers on "/factory-reflect", "what did that run teach us", "reflect on the factory run", "post-mortem the build".
+description: Use after a full factory run has ended - passed or hit the round cap - to reflect on the run itself and write proposals for improving the factory into factory/improvements.md. Reads every status block, every agy log and the final diff, sorts each lesson to context, memory, an ADR or the engine, and edits the engine only in self-development mode. Triggers on "/factory-reflect", "what did that run teach us", "reflect on the factory run", "post-mortem the build".
 ---
 
 # Factory reflect agent
@@ -9,7 +9,7 @@ caveman: run is over. read what happened. write down how factory itself gets
 better. no code changes, no engine edits.
 
 The loop is a product too, and the only evidence about it comes from running it
-(principle 16). A defect with no proposal behind it will be met again at full
+(principle 17). A defect with no proposal behind it will be met again at full
 price.
 
 ## When to run
@@ -75,6 +75,20 @@ Not mid-loop. Reflecting between rounds reflects on noise. If the state says
      Name it and say what removing it would cost. This is the half of the log
      that stops the next improvement from being a regression.
 
+4b. **Check the mode before you decide where anything goes.** Run
+   `bash scripts/factory_env.sh`. Its `engine_edit:` line is the whole
+   difference:
+
+   - **`project`** - the engine is vendored. Proposals are a queue for a human
+     to carry upstream, and you write them and stop.
+   - **`self`** - the engine IS this repo, so a proposal is not a note about
+     someone else's code, it is the next piece of work here. Still write it to
+     `factory/improvements.md` first (the reasoning has to survive), then say
+     which one you would build next and offer `/factory-think <that proposal>`.
+     Do not start editing skills inside a reflection: reflecting and building
+     are different jobs, and merging them is how a post-mortem quietly becomes
+     an unreviewed refactor (principle 2).
+
 5. **Sort every lesson to exactly one destination.** Wrong destination is how a
    lesson dies:
    - always true about this repo -> `factory/context.md`
@@ -83,8 +97,8 @@ Not mid-loop. Reflecting between rounds reflects on noise. If the state says
    - **the harness itself is wrong or missing something** ->
      `factory/improvements.md`, and nowhere else
 
-6. **Append to `factory/improvements.md`.** Create it from
-   `factory-engine/templates/improvements.md` if it does not exist. Append a
+6. **Append to `factory/improvements.md`.** Create it from the engine's
+   `templates/improvements.md` if it does not exist. Append a
    block, never overwrite - the history is the point:
 
    ```
@@ -93,7 +107,7 @@ Not mid-loop. Reflecting between rounds reflects on noise. If the state says
    Run: <n> rounds, <models used>, final status <Success|Stopped at cap>.
 
    ### <short title of the proposal>
-   Target: `factory-engine/skills/factory-check/SKILL.md`, step 7
+   Target: `skills/factory-check/SKILL.md`, step 7
    Evidence: round 2 log - RESULT: PASS, zero tests added, suite still 70
    Proposal: the exact wording you would put in that file, quoted.
 
@@ -104,8 +118,15 @@ Not mid-loop. Reflecting between rounds reflects on noise. If the state says
 
    Rules for a proposal:
    - **Target names a real file in the engine** - a skill, a template, a
-     persona, `scripts/run_antigravity.sh`, or `PRINCIPLES.md`. "Somewhere in
-     the prompt" is not a target.
+     persona, a script, or `PRINCIPLES.md`. "Somewhere in the prompt" is not a
+     target. Paths are relative to the engine root, which
+     `scripts/factory_env.sh` prints.
+   - **Prefer a target that is a script.** If a rule could be decided by
+     `scripts/factory_lint.sh` instead of by a reader, propose it there: prose
+     is paid for on every run, a check is free (principle 14).
+   - **Say what it replaces.** A proposal that only adds is a proposal to make
+     the skill longer, and the last thing a builder reads is the first thing it
+     skims.
    - **Evidence comes from this run.** No evidence, no entry.
    - **Proposal is the wording, not the wish.** Write the sentence you would
      paste into the file, so upstreaming it is a copy, not a rewrite.
@@ -125,9 +146,11 @@ Not mid-loop. Reflecting between rounds reflects on noise. If the state says
 - Write no code, no spec, no handoff. You touch `factory/improvements.md`, and
   `factory/context.md`, `factory/memory.md` or a new ADR where step 5 sends
   something.
-- **Never edit `factory-engine/`.** It is vendored; the change would die at the
-  next `git submodule update` and belongs upstream anyway (principle 9). This
-  holds even when the fix is one obvious word.
+- **Never edit the engine in `project` mode.** It is vendored; the change would
+  die at the next `git submodule update` and belongs upstream anyway
+  (principle 9). This holds even when the fix is one obvious word. In `self`
+  mode the rule inverts - the engine is the project - but even there a
+  reflection writes proposals, not code.
 - Every entry cites the run. A reflection that could have been written before
   the run started is a reflection about nothing.
 - Nothing worth saying -> write the `Run:` line and stop. An honest empty

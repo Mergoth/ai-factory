@@ -14,6 +14,27 @@ off the others' ground.
 | `skeptic.md` | what the request assumes, where it breaks |
 | `operator.md` | how it is tested, how it fails loudly, how it is undone |
 
+## The engine set
+
+`engine/` holds three more lenses, and they load **only in self-development
+mode** — when the repo being worked on is the harness itself. A product repo
+does not want them; they are aimed at prose, prompts and the harness's own
+history.
+
+| File | Lens |
+|---|---|
+| `engine/builder.md` | reads a changed skill as its recipient: what would I actually do? |
+| `engine/auditor.md` | which rules a machine could decide instead of a reader |
+| `engine/archaeologist.md` | what this cost before, what already covers it, what it displaces |
+
+`builder` is the important one. A `SKILL.md` is an instruction for a model, and
+no script can tell you whether the wording lands — but a blind reader given only
+that file can tell you what it understood. That is the closest thing to a test
+prose ever gets, and it is cheap: a read-only subagent, no `agy` round.
+
+`scripts/factory_env.sh` prints the persona directories that are actually in
+play, so `/factory-think` never has to know which mode it is in.
+
 ## Adding your own
 
 Drop a markdown file into **`factory/personas/`** in your project. It joins the

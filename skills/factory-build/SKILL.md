@@ -16,7 +16,8 @@ stopped instead of starting it over (principle 15).
 ## Steps
 
 1. **Find the target and ask where it stopped.** Slug given -> use it. No slug ->
-   newest handoff in `handoffs/`. Then, before anything else:
+   newest handoff in `handoffs/`. Then, before anything else - and
+   `bash scripts/factory_env.sh` too if you do not already know the mode:
 
    ```
    bash scripts/factory_state.sh <slug>
@@ -126,7 +127,7 @@ stopped instead of starting it over (principle 15).
    proposals for improving the factory itself to `factory/improvements.md`,
    citing what actually happened in these rounds. Do not skip it on a capped
    run: those teach the most, and the lesson is worthless a week later when
-   nobody remembers which round did what (principle 16).
+   nobody remembers which round did what (principle 17).
 
 9. **Report at the end**: rounds used, model per round, final status, files
    changed, last test line, and anything you want a human to look at. Then the

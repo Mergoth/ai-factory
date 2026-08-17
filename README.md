@@ -16,6 +16,7 @@ A few moving parts, no magic:
 | `/factory-reflect` | Claude Code | after the run ends, writes proposals for improving the factory into `factory/improvements.md` |
 | `scripts/factory_lint.sh` | anyone, any time | shape checks on brief, spec, handoff and logs. free, deterministic, no model call |
 | `scripts/factory_state.sh` | anyone, any time | where the run stopped and what to do next, read off the files |
+| `scripts/factory_env.sh` | anyone, any time | which mode, where the engine is, which persona lenses are in play |
 
 Files are the only thing these parts share, which is what lets Claude and `agy`
 hand work back and forth without a shared session. The rules they all obey are in
@@ -132,6 +133,8 @@ your-project/
   scripts/run_antigravity.sh      -> factory-engine/scripts/run_antigravity.sh
   scripts/factory_lint.sh         -> factory-engine/scripts/factory_lint.sh
   scripts/factory_state.sh        -> factory-engine/scripts/factory_state.sh
+  scripts/factory_env.sh          -> factory-engine/scripts/factory_env.sh
+  scripts/factory_common.sh       -> factory-engine/scripts/factory_common.sh
   factory.env                     # real file, yours, per project
   factory/                        # YOUR project brain
     context.md                    #   how this repo works
@@ -583,7 +586,37 @@ gitignored, and safe to delete when nothing is running.
 
 ## Changing the harness
 
-The harness has its own test suite, and it needs no `agy`, no network and no
+The factory runs on itself. `install.sh` inside this repo turns on
+**self-development mode** — no second copy of anything, just one branch point:
+
+```bash
+bash install.sh .            # in the harness repo itself
+bash scripts/factory_env.sh  # mode: self
+```
+
+That links the same five skills into `.claude/skills/`, seeds `factory/` as this
+repo's own brain, and sets `TEST_CMD` to the selftest. Three things differ from
+a project install, and nothing else does:
+
+| | project mode | self mode |
+|---|---|---|
+| where the engine is | `factory-engine/`, or wherever the symlinks point | the repo itself |
+| editing the engine | forbidden — vendored, changes die at the next update | the whole point |
+| persona lenses | product, architect, skeptic, operator | those four **plus** `personas/engine/` |
+
+`scripts/factory_env.sh` is the single place that knows which mode is on, so no
+skill contains a branch for it — they ask, and act on the answer. The extra
+lenses are aimed at prose rather than product code:
+
+- **builder** reads a changed `SKILL.md` as its recipient and reports what it
+  would actually do. A skill is an instruction for a model, and no script can
+  tell you whether the wording lands — a blind reader can.
+- **auditor** asks which rules a machine could decide instead of a reader, and
+  proposes the lint rule or selftest case that would replace the paragraph.
+- **archaeologist** supplies the history: what this cost last time, what already
+  covers it, how long the file has become, and what the new rule displaces.
+
+And the harness has its own test suite, which needs no `agy`, no network and no
 money:
 
 ```bash
@@ -608,9 +641,12 @@ Two rules keep it useful:
 - **It touches nothing outside its sandbox.** If a case ever needs your real
   repo, the case is wrong.
 
-The prose is a different matter. `SKILL.md` files are instructions *for a model*,
-and no script can tell you whether the wording lands. What it can tell you is
-that the machinery underneath still behaves.
+So the division of labour inside this repo mirrors the one outside it. The
+**shell** — 1500-odd lines of it — is ordinary code with a testable contract,
+and it is where both of the bugs above lived; that work has a green suite behind
+it and is worth handing to `agy`. The **prose** is instructions for a model, and
+its only real reviewer is a reader: that is what `personas/engine/builder.md` is
+for, and it costs nothing but a read-only subagent.
 
 ## Requirements
 
@@ -632,9 +668,12 @@ personas/product.md            # lens: who hurts, what done looks like
 personas/architect.md          # lens: where it lands, what it couples to
 personas/skeptic.md            # lens: what it assumes, where it breaks
 personas/operator.md           # lens: test, fail loudly, roll back
+personas/engine/               # lenses for changing the harness itself
 scripts/run_antigravity.sh     # call agy, tee log, lock, snapshot
 scripts/factory_lint.sh        # shape checks, free, no model call
 scripts/factory_state.sh       # where the run stopped, what to do next
+scripts/factory_env.sh         # mode, engine root, persona dirs
+scripts/factory_common.sh      # shared bones, sourced by every script
 scripts/selftest.sh            # the harness's own test suite, no agy needed
 agents/skills/                 # agy-side skills (empty by design)
 templates/brief.md             # shape of a brief
@@ -643,6 +682,7 @@ templates/handoff.md           # shape of a handoff
 templates/context.md           # seeds factory/context.md
 templates/memory.md            # seeds factory/memory.md
 templates/improvements.md      # seeds factory/improvements.md
+factory/                       # this repo's own brain, in self-development mode
 templates/adr.md               # shape of an ADR
 templates/prompt-extra.md      # seeds factory/prompt-extra.md
 factory.env.example            # per-project config template, no model ids

@@ -30,6 +30,15 @@ any time, including while agy is running.
 USAGE
 }
 
+# caveman: find the engine through this script's own symlink, then load the
+# shared bones. this is the only duplicated block in the scripts, and it has to
+# be: it is what makes sharing possible at all.
+SELF="$0"; while [ -L "$SELF" ]; do L="$(readlink "$SELF")"
+  case "$L" in /*) SELF="$L" ;; *) SELF="$(dirname "$SELF")/$L" ;; esac; done
+FACTORY_ENGINE="$(cd "$(dirname "$SELF")/.." && pwd -P)"
+# shellcheck source=factory_common.sh
+. "$FACTORY_ENGINE/scripts/factory_common.sh"
+
 SLUG=""
 NEXT_ONLY=0
 ALL=0
@@ -44,24 +53,19 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "error: not inside a git repo" >&2; exit 1; }
+REPO_ROOT="$(factory_repo_root)" || true
+[ -n "$REPO_ROOT" ] || { echo "error: not inside a git repo" >&2; exit 1; }
 cd "$REPO_ROOT"
-
-MAX_ROUNDS="3"
-TEST_CMD=""
-# shellcheck source=/dev/null
-[ -f factory.env ] && . ./factory.env
+factory_load_env "$REPO_ROOT"
 
 LOCK_DIR="$REPO_ROOT/.factory-cache/locks"
 SNAP_DIR="$REPO_ROOT/.factory-cache/snapshots"
 
 state_of() { # state_of <slug>; sets the globals below
   SL="$1"
-  HANDOFF="$(ls -1 handoffs/*-"$SL".md 2>/dev/null | sort | tail -n 1 || true)"
-  # ls fails on a glob with no match, and pipefail turns that into an exit.
-  ROUNDS="$(ls -1 handoffs/logs-*-"$SL".txt 2>/dev/null | wc -l | tr -d ' ' || true)"
-  LAST_LOG="$(ls -1 handoffs/logs-*-"$SL".txt 2>/dev/null | sort | tail -n 1 || true)"
+  HANDOFF="$(factory_newest_handoff "$SL")"
+  ROUNDS="$(factory_count_logs "$SL")"
+  LAST_LOG="$(factory_newest_log "$SL")"
   CHECKS=0
   LAST_STATUS="none"
   LAST_TESTS=""
@@ -105,7 +109,7 @@ state_of() { # state_of <slug>; sets the globals below
     LOCK_INFO="no"
   fi
 
-  SNAP="$(ls -1 "$SNAP_DIR"/*-"$SL".tar.gz 2>/dev/null | sort | tail -n 1 || true)"
+  SNAP="$(factory_newest "$SNAP_DIR/*-$SL.tar.gz")"
 
   # caveman: the state machine. rounds and checks both come off the disk, so a
   # fresh agent counts the same round cap a dead one was counting.
@@ -160,7 +164,7 @@ report_one() { # report_one <slug>
 }
 
 if [ "$ALL" -eq 1 ]; then
-  SLUGS="$(ls -1 handoffs/*.md 2>/dev/null | sed -e 's|.*/||' -e 's|\.md$||' -e 's|^[0-9TZ]*-||' | sort -u || true)"
+  SLUGS="$(factory_all_slugs)"
   [ -n "$SLUGS" ] || { echo "no handoffs found in handoffs/"; exit 0; }
   for s in $SLUGS; do
     state_of "$s"
@@ -171,8 +175,8 @@ if [ "$ALL" -eq 1 ]; then
 fi
 
 if [ -z "$SLUG" ]; then
-  newest="$(ls -1 handoffs/*.md 2>/dev/null | sort | tail -n 1 || true)"
-  if [ -z "$newest" ]; then
+  SLUG="$(factory_default_slug || true)"
+  if [ -z "$SLUG" ]; then
     if [ "$NEXT_ONLY" -eq 1 ]; then echo "spec"; else
       echo "no handoffs found in handoffs/"
       echo "next:         spec"
@@ -180,8 +184,6 @@ if [ -z "$SLUG" ]; then
     fi
     exit 0
   fi
-  base="$(basename "$newest" .md)"
-  SLUG="${base#*-}"
 fi
 
 if [ "$NEXT_ONLY" -eq 1 ]; then

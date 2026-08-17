@@ -129,7 +129,23 @@ the run stopped and do what it says. And before letting a round loose, snapshot
 the uncommitted work — it is the only copy there is, and a bad round eating a
 good one is the one loss the factory cannot undo.
 
-## 16. Every full run improves the factory
+## 16. One copy of every rule, and the factory runs on itself
+
+A rule that exists in two places has already begun to disagree with itself, and
+the older copy usually wins arguments it should lose. So: the shape of an
+artefact is decided in `factory_lint.sh` and nowhere else. Where the engine
+lives is answered by `factory_env.sh` and nowhere else. Common bones live in
+`factory_common.sh`, and the only duplicated code in the repo is the four-line
+bootstrap that finds it.
+
+The same rule applies to the factory working on itself. Self-development mode is
+**one branch point**, not a second harness: the same skills, the same scripts,
+the same personas, plus one extra lens set for prose and one inverted permission
+(here the engine *is* the project, so editing it is the work rather than the
+mistake). If self-mode ever needs its own copy of a skill, the design is wrong —
+fix the skill so both modes read the same words.
+
+## 17. Every full run improves the factory
 
 The loop is a product too, and the only evidence about it comes from running it.
 After every run that ends — passed or capped — spend one cheap round on the

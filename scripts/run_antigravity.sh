@@ -33,6 +33,15 @@ USAGE
 [ $# -ge 1 ] || { usage; exit 2; }
 [ "$1" = "-h" ] || [ "$1" = "--help" ] && { usage; exit 0; }
 
+# caveman: find the engine through this script's own symlink, then load the
+# shared bones. this is the only duplicated block in the scripts, and it has to
+# be: it is what makes sharing possible at all.
+SELF="$0"; while [ -L "$SELF" ]; do L="$(readlink "$SELF")"
+  case "$L" in /*) SELF="$L" ;; *) SELF="$(dirname "$SELF")/$L" ;; esac; done
+FACTORY_ENGINE="$(cd "$(dirname "$SELF")/.." && pwd -P)"
+# shellcheck source=factory_common.sh
+. "$FACTORY_ENGINE/scripts/factory_common.sh"
+
 TARGET="$1"; shift
 DRY_RUN=0
 MODEL_OVERRIDE=""
@@ -55,27 +64,23 @@ while [ $# -gt 0 ]; do
 done
 
 # caveman: work from repo root. all paths relative to it.
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "error: not inside a git repo" >&2; exit 1; }
+REPO_ROOT="$(factory_repo_root)" || true
+[ -n "$REPO_ROOT" ] || { echo "error: not inside a git repo" >&2; exit 1; }
 cd "$REPO_ROOT"
+ENGINE="$(factory_engine_root)"
+MODE="$(factory_mode "$REPO_ROOT" "$ENGINE")"
 
 # caveman: config. no model ids live here - they rotate. ask agy instead.
-TEST_CMD=""
-AGY_TIMEOUT="30m"
-AGY_FALLBACKS="2"            # how many other models to try if agy breaks.
-MODELS_TTL_MIN="720"         # how long the cached model list stays fresh.
-# shellcheck source=/dev/null
-[ -f factory.env ] && . ./factory.env
+factory_load_env "$REPO_ROOT"
 
 # caveman: figure out slug and handoff.
 if [ -f "$TARGET" ]; then
   HANDOFF="$TARGET"
-  BASE="$(basename "$HANDOFF" .md)"
-  SLUG="${BASE#*-}"          # strip leading <timestamp>-
+  SLUG="$(factory_slug_of "$HANDOFF")"
 else
   SLUG="$TARGET"
   # newest handoff for this slug
-  HANDOFF="$(ls -1 handoffs/*-"$SLUG".md 2>/dev/null | sort | tail -n 1 || true)"
+  HANDOFF="$(factory_newest_handoff "$SLUG")"
   [ -n "$HANDOFF" ] || { echo "error: no handoff found for slug '$SLUG' in handoffs/" >&2; exit 1; }
 fi
 
@@ -136,20 +141,13 @@ HANDOFF_ABS="$REPO_ROOT/$HANDOFF"
 # carrying the template marker is not filled in yet - feeding agy blank
 # headings is worse than saying nothing.
 #
-# marker is only honoured on LINE 1, where install.sh puts it. matching it
-# anywhere made a filled-in file that merely mentions the marker drop itself,
-# silently, and the builder then re-decided every convention from scratch.
-is_template() { # is_template <abs-path>
-  case "$(head -n 1 "$1" 2>/dev/null)" in
-    *factory:template*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
+# marker is only honoured on LINE 1 - factory_is_template in factory_common.sh
+# is the one copy of that rule.
 
 CONTEXT_BLOCK=""
 add_context() { # add_context <abs-path> <why>
   [ -s "$1" ] || return 0
-  if is_template "$1"; then
+  if factory_is_template "$1"; then
     # loud, and on stdout: a dropped context file is invisible in the log and
     # costs a whole round of the builder re-inventing this project's rules.
     echo "WARNING: ${1#"$REPO_ROOT"/} still has the factory:template marker on line 1."
@@ -183,7 +181,7 @@ fi
 # caveman: raw per-project orders, pasted in as-is. skip blank template.
 EXTRA=""
 if [ -s "$REPO_ROOT/factory/prompt-extra.md" ] &&
-   ! is_template "$REPO_ROOT/factory/prompt-extra.md"; then
+   ! factory_is_template "$REPO_ROOT/factory/prompt-extra.md"; then
   EXTRA="
 
 Extra rules for this project:
@@ -373,7 +371,7 @@ fi
 # caveman: header in log so review agent knows what ran. round number counts
 # the logs on disk, so a fresh agent that lost its memory counts the same round
 # an old one was counting.
-ROUND=$(( $(ls -1 handoffs/logs-*-"$SLUG".txt 2>/dev/null | wc -l | tr -d ' ' || true) + 1 ))
+ROUND=$(( $(factory_count_logs "$SLUG") + 1 ))
 {
   echo "=== antigravity run ==="
   echo "timestamp: $TS"

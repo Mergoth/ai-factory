@@ -204,8 +204,8 @@ if [ "$GROUP_ON" = 1 ]; then
   t "links all five Claude skills"
   counts "$R/.claude/skills/factory-*" 5
 
-  t "links the three scripts"
-  counts "$R/scripts/factory_*.sh" 2
+  t "links the shared scripts"
+  counts "$R/scripts/factory_*.sh" 4
   t "links the runner"
   exists "$R/scripts/run_antigravity.sh"
 
@@ -226,11 +226,69 @@ if [ "$GROUP_ON" = 1 ]; then
   run "$R" grep -qxF 'TEST_CMD="mine"' factory.env
   rc_is 0
 
-  t "refuses to install into the harness itself"
-  run "$ENGINE" bash "$ENGINE/install.sh" "$ENGINE"
-  rc_not 0
-  t "and says why"
-  has "harness repo itself"
+fi
+
+# ------------------------------------------------------ self-development
+group "self mode"
+if [ "$GROUP_ON" = 1 ]; then
+  # caveman: never install into the real engine repo - copy it first. a copy of
+  # the WORKING TREE, not a clone of HEAD: the point is to test what is about to
+  # be committed, not what already was.
+  S="$WORK/selfmode"
+  mkdir -p "$S"
+  ( cd "$ENGINE" && tar cf - --exclude .git --exclude .factory-cache . ) | ( cd "$S" && tar xf - )
+  ( cd "$S" && git init -q . && git config user.email t@example.com &&
+    git config user.name t && git add -A && git commit -qm base >/dev/null 2>&1 )
+
+  t "installing into the harness itself is self-development mode"
+  run "$S" bash ./install.sh .
+  rc_is 0
+  t "and says so"
+  has "self-development"
+
+  t "the skills are linked inside the engine repo"
+  counts "$S/.claude/skills/factory-*" 5
+  t "with relative links that stay inside the repo"
+  is "$(readlink "$S/.claude/skills/factory-check")" "../../skills/factory-check"
+  t "and the linked skill is readable"
+  exists "$S/.claude/skills/factory-check/SKILL.md"
+
+  t "the scripts are NOT relinked onto themselves"
+  [ -L "$S/scripts/factory_lint.sh" ] && bad "scripts/factory_lint.sh became a symlink" || ok
+  t "and the runner survived"
+  exists "$S/scripts/run_antigravity.sh"
+
+  t "TEST_CMD is the harness selftest"
+  run "$S" grep -q 'TEST_CMD="bash scripts/selftest.sh"' factory.env
+  rc_is 0
+  t "which actually runs"
+  run "$S" bash scripts/selftest.sh --only "state machine"
+  rc_is 0
+
+  t "factory_env.sh reports self mode"
+  run "$S" bash scripts/factory_env.sh
+  has "mode:        self"
+  t "with the engine and the project being one repo"
+  has "engine:      $S"
+  t "and engine edits allowed"
+  has "engine_edit: allowed"
+  t "and the engine persona lenses loaded"
+  has "personas/engine"
+
+  t "a second self-install keeps factory.env"
+  run "$S" bash ./install.sh .
+  rc_is 0
+  t "and is still self mode"
+  has "self-development"
+
+  t "project mode reports the vendored engine instead"
+  P="$(new_repo projectmode)"
+  run "$P" bash scripts/factory_env.sh
+  has "mode:        project"
+  t "and forbids engine edits"
+  has "engine_edit: forbidden"
+  t "and does not load the engine-only lenses"
+  lacks "personas/engine"
 fi
 
 # ------------------------------------------------------- runner preflight
