@@ -234,6 +234,8 @@ WALKTHROUGH:
   verify by hand: exact commands a human runs to watch it work. not the test
     suite - something they can see.
   not covered: what you did not test, and what you are unsure about.
+  outside the contract: each file you touched that is not under "Files to
+    touch", and why - or "none".
 
 The walkthrough is checked against the actual diff. Describe only what you really
 changed - an accurate "I could not finish X" beats a confident description of
@@ -298,6 +300,20 @@ for pass in other any; do
   done
 done
 
+# caveman: a family that just answered 429 will answer it again. remember the
+# hit for an hour and start with the fallback instead of paying to re-learn it.
+QUOTA="$CACHE_DIR/quota.txt"
+quota_hit() { # quota_hit <family> - 0 if it hit its quota in the last hour
+  [ -f "$QUOTA" ] || return 1
+  awk -v f="$1" -v cut="$(( $(date +%s) - 3600 ))" \
+    '$1 == f && $2 >= cut { hit = 1 } END { exit !hit }' "$QUOTA"
+}
+FIRST="${TRY%% *}"
+if [ "$TRY" != "$FIRST" ] && quota_hit "$(family "$FIRST")"; then
+  echo "warn: $(family "$FIRST") hit its quota in the last hour - starting with the fallback" >&2
+  TRY="${TRY#"$FIRST" } $FIRST"
+fi
+
 echo "repo:    $REPO_ROOT"
 echo "slug:    $SLUG"
 echo "spec:    $SPEC"
@@ -307,7 +323,6 @@ echo "tests:   $TEST_CMD"
 echo "log:     $LOG"
 echo
 
-FIRST="${TRY%% *}"
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "--- prompt ---"
   printf '%s\n' "$PROMPT"
@@ -387,32 +402,70 @@ ROUND=$(( $(factory_count_logs "$SLUG") + 1 ))
   echo
 } > "$LOG"
 
+# caveman: submodule branches before the round. a round that leaves one
+# detached strands any unpushed commit on the branch it was on.
+subs_heads() {
+  git submodule foreach --quiet 'echo "$sm_path $(git rev-parse --abbrev-ref HEAD)"' 2>/dev/null || true
+}
+SUBS_BEFORE="$(subs_heads)"
+
 # caveman: try each model. nonzero exit = agy itself broke, try next one.
 # zero exit = agy ran and reported. tests may still fail - that is the build
 # agent's problem, not the model's, so do NOT fall through on it.
+# a model that died mid-run may have left half its edits behind; the next one
+# is told so, or it redoes them on top of themselves.
+PRE_STATUS="$(git status --porcelain 2>/dev/null || true)"
+ATTEMPT_OUT="$CACHE_DIR/attempt-$SLUG.txt"
 AGY_EXIT=1
 USED=""
+REQ_EXIT=""
 for m in $TRY; do
   echo ">>> model: $m"
   echo "=== attempt with model: $m ===" >> "$LOG"
+  P="$PROMPT"
+  if [ -n "$USED" ] && [ "$(git status --porcelain 2>/dev/null || true)" != "$PRE_STATUS" ]; then
+    echo "=== previous model left edits in the tree; told $m to continue from them ===" >> "$LOG"
+    P="A previous build agent edited this tree and stopped mid-run. Its uncommitted
+edits are still there. Run git diff first and finish its work; do not redo or
+duplicate it.
+
+$PROMPT"
+  fi
+  : > "$ATTEMPT_OUT"
   set +e
-  agy --print "$PROMPT" \
+  agy --print "$P" \
       --add-dir "$REPO_ROOT" \
       --model "$m" \
       --print-timeout "$AGY_TIMEOUT" \
-      --dangerously-skip-permissions 2>&1 | tee -a "$LOG"
+      --dangerously-skip-permissions 2>&1 | tee -a "$LOG" "$ATTEMPT_OUT"
   AGY_EXIT="${PIPESTATUS[0]}"
   set -e
+  [ -n "$USED" ] || REQ_EXIT="$AGY_EXIT"
   USED="$m"
   if [ "$AGY_EXIT" -eq 0 ]; then
     break
   fi
+  if grep -qiE 'RESOURCE_EXHAUSTED|code 429|quota (reached|exceeded|exhausted)' "$ATTEMPT_OUT"; then
+    printf '%s %s %s\n' "$(family "$m")" "$(date +%s)" "$m" >> "$QUOTA"
+  fi
   echo "warn: agy failed with '$m' (exit $AGY_EXIT), trying next model" >&2
   echo "=== model $m failed, exit $AGY_EXIT ===" >> "$LOG"
 done
+rm -f "$ATTEMPT_OUT"
+
+SUBS_MOVED=""
+if [ -n "$SUBS_BEFORE" ]; then
+  SUBS_AFTER="$(subs_heads)"
+  SUBS_MOVED="$(printf '%s\n' "$SUBS_BEFORE" | while read -r sp sb; do
+    sa="$(printf '%s\n' "$SUBS_AFTER" | awk -v p="$sp" '$1 == p { print $2 }')"
+    [ "$sa" = "$sb" ] || echo "$sp $sb -> ${sa:-gone}"
+  done)"
+fi
 
 {
   echo
+  [ "$USED" = "$FIRST" ] || echo "=== model requested: $FIRST (exit $REQ_EXIT) -> used: $USED ==="
+  [ -z "$SUBS_MOVED" ] || printf '%s\n' "$SUBS_MOVED" | sed 's/^/=== submodule branch changed: /; s/$/ ===/'
   echo "=== model used: $USED ==="
   echo "=== agy exit code: $AGY_EXIT ==="
 } >> "$LOG"
@@ -420,6 +473,9 @@ done
 echo
 echo "round: $ROUND"
 echo "model used: $USED"
+[ "$USED" = "$FIRST" ] || echo "model requested: $FIRST (exit $REQ_EXIT) - fell back to $USED"
+[ -z "$SUBS_MOVED" ] || { echo "warn: the round moved a submodule's branch:" >&2
+  printf '  %s\n' "$SUBS_MOVED" >&2; }
 echo "agy exit code: $AGY_EXIT"
 echo "log saved: $LOG"
 [ -z "$SNAPSHOT" ] || echo "pre-round snapshot: $SNAPSHOT"

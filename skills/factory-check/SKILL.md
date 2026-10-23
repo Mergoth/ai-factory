@@ -52,6 +52,10 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    Check side-effect attacks - command execution, a write outside the root - by
    looking for the side effect, not the return value: a successful attack
    usually returns something empty and innocuous.
+   When the code reports failure as a return value (an `error` or `unresolved`
+   key, a falsy result) instead of raising, check that every setup call in a
+   new test asserts it succeeded - a setup step that silently failed makes the
+   assertion after it vacuous.
 
    **3c. Read the artefact, not only the assertion.** When the change writes a
    file, open the file. Tests assert what their author thought to assert, and
@@ -59,7 +63,9 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    (format, ordering, encoding, trailing newline). If the change produces a
    durable artefact - a log line, a frontmatter block, a filename, a serialized
    record - drive the code to produce one and paste it into the status block
-   verbatim, so a human sees the shape.
+   verbatim, so a human sees the shape. When the change ships UI, drive each
+   screen the spec names to a screenshot at the target viewport, reusing the
+   round's test stubs, look at it, and list the screens checked in the block.
 
 4. **Re-run the tests yourself.** Run `TEST_CMD` from `factory.env` in a Bash
    call. Do not trust `RESULT: PASS` in the log, and do not trust the `agy exit
@@ -103,6 +109,16 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
      than the behaviour it was meant to pin down (principle 13)
    - tests deleted, skipped, or weakened instead of fixed
    - files changed that the handoff did not list, with no reason given
+   - a non-empty `stray:` line from `factory_state.sh` - untracked files the
+     round left behind (helper scripts, scratch patches)
+   - a URL, project id, bucket or secret name in the diff that appears nowhere
+     in the handoff, spec or repo. Grep each one; an invented identifier is
+     `Needs fix`
+   - aliases, duplicate parameters or `getattr` fallback chains that exist only
+     so a test double fits - the double should match the real API instead
+   - a read path whose query got wider (a dropped per-entity filter, a new
+     org-wide scan) where the handoff did not ask for it. Where the project has
+     a cost constraint, ask for a call-count test on the narrowest path
    - secrets, keys, tokens, or absolute local paths added
    - `specs/`, `handoffs/`, or the engine itself edited by agy (it must not touch
      those - in self mode the engine is in scope, but only when the handoff

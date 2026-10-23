@@ -13,7 +13,7 @@ A few moving parts, no magic:
 | `/factory-build` | Claude Code | launches `agy`, waits, verifies, re-runs until pass or cap |
 | `scripts/run_antigravity.sh` | Claude or your shell | calls `agy` with that contract, tees the log to `handoffs/` |
 | `/factory-check` | Claude Code | re-runs the tests, checks the walkthrough against the diff, appends a verdict |
-| `/factory-reflect` | Claude Code | after the run ends, writes proposals for improving the factory into `factory/improvements.md` |
+| `/factory-reflect` | Claude Code | after the run ends, writes proposals for improving the factory into `factory/improvements.md`, and copies them to the harness inbox when `FACTORY_UPSTREAM` is set |
 | `scripts/factory_lint.sh` | anyone, any time | shape checks on brief, spec, handoff and logs. free, deterministic, no model call |
 | `scripts/factory_state.sh` | anyone, any time | where the run stopped and what to do next, read off the files |
 | `scripts/factory_env.sh` | anyone, any time | which mode, where the engine is, which persona lenses are in play |
@@ -161,6 +161,11 @@ drifts.
 On a filesystem without symlinks, use `bash factory-engine/install.sh --copy` and
 re-run it after each update.
 
+Ad-hoc target, no install: from the target repo root run
+`bash <engine>/scripts/run_antigravity.sh <slug>`. The repo root is the cwd's git
+toplevel, so `factory.env`, `factory/`, `specs/` and `handoffs/` live there - keep
+them untracked if the repo is not yours to change.
+
 Then set your test command:
 
 ```bash
@@ -202,7 +207,9 @@ turning into one sprawling prompt:
   typing code `agy` should have written, a default nobody edited. Each entry
   names a real engine file and quotes the wording it proposes. It is a queue, not
   a changelog — `factory-engine/` is never edited from a project, so carrying an
-  entry upstream is a human action.
+  entry upstream is a human action. Set `FACTORY_UPSTREAM` to a local checkout of
+  this repo and every block is also appended to its `factory/improvements.md`,
+  one inbox for all projects, so lessons stop dying in throwaway clones.
 - **`briefs/`** — written by `/factory-think`, one per feature. The only file
   that answers "why is it like this" six months later, and the only one holding
   the alternatives you rejected, so nobody re-proposes them.
@@ -440,7 +447,8 @@ not be refactored away. Every entry names a real engine file and cites the round
 it came from — no evidence from the run, no entry, capped at five.
 
 Nothing in the harness changes on its own. The file is a queue for a human to
-carry upstream.
+carry upstream; with `FACTORY_UPSTREAM` set, a copy lands in the harness
+checkout's inbox too (`bash scripts/factory_env.sh` prints where, as `upstream:`).
 
 **6. Loop.** `/factory-build` already loops, so normally there is nothing to do
 here. If you are driving by hand, `Needs fix` means run step 3 again — the
@@ -564,7 +572,8 @@ gitignored, and safe to delete when nothing is running.
   `/factory-check` and `/factory-build` never edit code. Nothing grades its own
   work.
 - **The factory does not modify itself.** `/factory-reflect` proposes changes to
-  the harness in a project file and stops there. `factory-engine/` is vendored
+  the harness in a project file (and the harness checkout's inbox, if
+  `FACTORY_UPSTREAM` is set) and stops there. `factory-engine/` is vendored
   and edited only upstream, by a human, in a diff they read.
 - **Personas are read-only by construction.** They run as `Explore` subagents,
   which have no write tools — a thinking step cannot quietly become a building
@@ -620,7 +629,7 @@ And the harness has its own test suite, which needs no `agy`, no network and no
 money:
 
 ```bash
-bash scripts/selftest.sh          # ~12 seconds, 70 cases
+bash scripts/selftest.sh          # ~20 seconds, 109 cases
 bash scripts/selftest.sh --only lock
 bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
 ```

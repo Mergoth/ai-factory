@@ -32,13 +32,23 @@ caveman: read code, write spec, write handoff, stop. no code changes.
    or be a new file you say is new. Follow the conventions in `context.md`
    rather than inventing your own.
 
+   - **A changed data shape gets a repo-wide reader sweep.** When the change
+     alters a config schema, a serialized record, or a key read in more than
+     one place, grep the whole repo for every reader and list them all under
+     Files to touch. Put the grep in the spec's Notes so the checker can re-run
+     it.
+   - **"Do what `<existing function>` does" imports its defects.** Read that
+     function's side effects first and state them in the spec. If one breaks
+     the brief's constraints, specify the narrower behaviour instead.
+
 3. **Preflight the harness, before writing anything.** Each of these costs
    seconds here and a whole paid round if it is discovered by `agy`:
 
    - **`factory.env` and `TEST_CMD`.** If `factory.env` is missing, copy
      `factory.env.example` to `factory.env`, fill in the real test command for
      this repo, and tell the user you did. A `TEST_CMD` still holding the
-     template default is the single most expensive thing on this list.
+     template default is the single most expensive thing on this list, and
+     the lint refuses it.
    - **Run `TEST_CMD` once, now.** Not to see tests pass - to see that the
      command exists and the runner starts. If it dies on `command not found`, a
      missing interpreter, an unsupported runtime version, or an unresolvable
@@ -103,7 +113,30 @@ caveman: read code, write spec, write handoff, stop. no code changes.
      `resolve()`" left a `query` string reaching a subprocess and shipped an
      RCE. "Every caller-controlled string that reaches the filesystem or a
      subprocess" would have caught it. Name the class of input, then name the
-     ones you know about as examples.
+     ones you know about as examples. A parsed number's class includes NaN,
+     Infinity and a non-number. And when the fix is about how code gets
+     called, list every production path that reaches it (direct bind, lazy
+     lookup, streaming) and give each a test or an explicit Out.
+   - **Every Scope entry needs a criterion that fails if it is missing
+     entirely.** A criterion about an object's attributes (a rewrite's source,
+     a field's value) silently assumes the object exists - assert existence
+     first.
+   - **A new test that pins a behaviour change names the input that makes the
+     current code fail.** A test the old code also passes proves nothing.
+   - **Cite the real shape, do not recall it.** When a criterion depends on data
+     another component writes or reads (stored messages, DB rows, a tool's
+     argument names, eval cases, fixtures), cite the `file:line` that defines
+     it, and inline the schema if it lives on another branch. If you cannot
+     cite it, you have not checked it.
+   - **Things that must agree get a criterion that compares them.** Two files
+     naming one identifier: `<file A> field X == <file B> field Y`. A new read
+     path that reports what an existing one already decides (current price,
+     balance): a test asserting both answer the same on a tie or edge input.
+   - **A criterion that inspects the diff names the builder's paths, never the
+     whole tree.** Your own preflight edits to `factory.env`, `factory/` and
+     `specs/` are already there, so `git diff --quiet` over everything always
+     fails. Scope it: `git status --porcelain -- <paths>`. The lint warns on an
+     unscoped one.
 
 7. **Offer an ADR if the change decides something structural** - a new
    dependency, a new layer, a data model shape, a rule future code must follow.

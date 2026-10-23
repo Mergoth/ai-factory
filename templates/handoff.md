@@ -44,7 +44,11 @@ Must pass:
 
 <!-- what cannot be verified on this machine: no docker daemon, no network, no
      credentials. write the artefact, do not claim it works, list it under
-     "not covered" in the walkthrough. delete this section if there are none. -->
+     "not covered" in the walkthrough. for each artefact that cannot run here,
+     add a done criterion naming the property a human must read to believe it
+     (a provider requirement, a name that must match another file, a required
+     field) - "declared uncovered" is honest but verifies nothing.
+     delete this section if there are none. -->
 
 - thing that cannot be verified here, and what to do instead
 

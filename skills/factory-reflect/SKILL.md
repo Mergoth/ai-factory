@@ -136,16 +136,41 @@ Not mid-loop. Reflecting between rounds reflects on noise. If the state says
      writing a new one. A proposal that recurs is stronger evidence, not new
      information.
 
+6b. **Forward the same blocks to the shared inbox.** Read the `upstream:` line
+   from `bash scripts/factory_env.sh`:
+
+   - **a path** - append what you wrote in step 6 to that file, under one
+     header naming where it came from. Remove a `factory:template` line 1 if
+     the file still has one:
+
+     ```
+     ## <timestamp> - <project> / <slug>
+
+     From: `<project repo dir name>`, `factory/improvements.md`
+     <the proposal and Held blocks from step 6, verbatim>
+     ```
+
+     `Seen again:` notes go there as their own one-line entry under the same
+     header. Never edit an earlier inbox entry - it may be another project's.
+   - **`unset` or `invalid`** - skip it and print:
+     `inbox: skipped - FACTORY_UPSTREAM not set (see factory.env.example)`.
+   - **`self`** - nothing to do; step 6 already wrote to the harness.
+
+   The inbox is the harness checkout's own `factory/improvements.md` -
+   knowledge, not engine - so this is not an engine edit. Leave it
+   uncommitted: turning entries into engine changes is still a human PR.
+
 7. **Report to the user.** Print the round table, the proposals by title, and
-   which lessons went to context, memory or an ADR. Then say plainly that
-   nothing in the engine has changed: `factory/improvements.md` is a queue, and
-   carrying it upstream is a human action - a PR against the harness repo.
+   which lessons went to context, memory or an ADR, and whether the inbox got a
+   copy. Then say plainly that nothing in the engine has changed: both files are
+   queues, and turning an entry into an engine change is a human action - a PR
+   against the harness repo.
 
 ## Rules
 
-- Write no code, no spec, no handoff. You touch `factory/improvements.md`, and
-  `factory/context.md`, `factory/memory.md` or a new ADR where step 5 sends
-  something.
+- Write no code, no spec, no handoff. You touch `factory/improvements.md`, the
+  inbox from step 6b, and `factory/context.md`, `factory/memory.md` or a new
+  ADR where step 5 sends something.
 - **Never edit the engine in `project` mode.** It is vendored; the change would
   die at the next `git submodule update` and belongs upstream anyway
   (principle 9). This holds even when the fix is one obvious word. In `self`
