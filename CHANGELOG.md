@@ -20,6 +20,20 @@ the entry here, tags `v<version>` and publishes a GitHub release. Lines in the
 PR body that start with `Action needed:` are copied into the entry.
 `scripts/factory_version.sh` compares a project against the newest tag.
 
+## 1.1.0 - 2026-10-23
+
+- The session hook works in fresh git worktrees, like the ones the Claude
+  desktop app makes per session. `git worktree add` leaves submodules empty, so
+  the hook command now inits the engine submodule only (no other submodule,
+  so one you cannot clone does not block it) when its `VERSION` is missing,
+  skips the session script quietly when the fetch fails, takes the repo root from git rather than `$CLAUDE_PROJECT_DIR`, and
+  has a 120 s timeout. After an init, `factory_session_start.sh` returns
+  `"reloadSkills": true` so the `/factory-*` skills load in that same session.
+- `install.sh --update` rewrites an existing session hook command (the 1.0.0
+  one or a hand-edited one) in place instead of leaving it alone.
+
+Commit `.claude/settings.json` after `--update` - its hook command changed.
+
 ## 1.0.0 - 2026-10-23
 
 First versioned release. Everything before it is this release too: installs

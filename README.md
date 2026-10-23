@@ -231,6 +231,21 @@ decision), and tell you what to commit. It does not commit, and it does not
 check again mid-session. Commit `.claude/settings.json` so the whole team gets
 the hook.
 
+**Git worktrees.** `git worktree add` never inits submodules - and the Claude
+desktop app makes a worktree per session - so a fresh worktree has an empty
+`factory-engine/`: every skill link dangles and the session script is missing.
+The hook command handles it. It takes the repo root from
+`git rev-parse --show-toplevel` (in a worktree `$CLAUDE_PROJECT_DIR` can be the
+main checkout), and when `<engine>/VERSION` is missing it inits the engine
+submodule only - `git submodule update --init -- <engine>`, so another
+submodule you cannot clone does not take the engine down (hence a 120 s
+timeout). If the fetch fails anyway, git's error goes to stderr and the
+session starts without the hook, never with an exit-127 error. The
+session script then answers with `"reloadSkills": true`, so Claude re-scans
+`.claude/skills` and `/factory-*` work in that very first session. Copy
+installs have nothing to init. `--update` rewrites an older hook command - the
+1.0.0 one or a hand-edited one - in place, without adding a second entry.
+
 Symlinks mean nothing is copied, so nothing drifts between updates. On a
 filesystem without symlinks, use `bash factory-engine/install.sh --copy`;
 `--update` remembers that mode.
