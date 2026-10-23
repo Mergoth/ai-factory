@@ -114,3 +114,46 @@ factory_default_slug() {
   [ -n "$newest" ] || return 1
   factory_slug_of "$newest"
 }
+
+# caveman: semver compare, no sort -V - BSD and GNU disagree on it. a leading
+# v and anything after a dash are ignored. prints -1, 0 or 1.
+factory_ver_cmp() { # factory_ver_cmp <a> <b>
+  awk -v a="$1" -v b="$2" 'BEGIN {
+    sub(/^v/, "", a); sub(/-.*/, "", a); sub(/^v/, "", b); sub(/-.*/, "", b)
+    split(a, x, "."); split(b, y, ".")
+    for (i = 1; i <= 3; i++) {
+      if (x[i] + 0 < y[i] + 0) { print -1; exit }
+      if (x[i] + 0 > y[i] + 0) { print 1; exit }
+    }
+    print 0 }'
+}
+
+factory_is_ver() { # factory_is_ver <string>  - X.Y.Z, nothing else
+  printf '%s\n' "$1" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+# caveman: the engine's own version. one file, read the same way everywhere.
+factory_engine_version() { # factory_engine_version <engine_root>
+  local v
+  v="$(head -n 1 "$1/VERSION" 2>/dev/null | tr -d ' \r' || true)"
+  factory_is_ver "$v" && printf '%s\n' "$v"
+  return 0
+}
+
+# caveman: the changelog sections a move from <from> to <to> brought in, so an
+# update shows what it means and not only which commits it was.
+factory_changelog_between() { # factory_changelog_between <CHANGELOG.md> <from> <to>
+  [ -f "$1" ] || return 0
+  local v keep=0 line
+  while IFS= read -r line; do
+    case "$line" in
+      "## "*)
+        v="${line#\#\# }"; v="${v%% *}"
+        keep=0
+        if factory_is_ver "$v" && [ "$(factory_ver_cmp "$v" "$2")" = 1 ] &&
+           [ "$(factory_ver_cmp "$v" "$3")" != 1 ]; then keep=1; fi ;;
+    esac
+    [ "$keep" -eq 1 ] && printf '%s\n' "$line"
+  done < "$1"
+  return 0
+}

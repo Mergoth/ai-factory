@@ -133,6 +133,9 @@ your-project/
   scripts/run_antigravity.sh      -> factory-engine/scripts/run_antigravity.sh
   scripts/factory_lint.sh         -> factory-engine/scripts/factory_lint.sh
   scripts/factory_state.sh        -> factory-engine/scripts/factory_state.sh
+  scripts/factory_version.sh      -> factory-engine/scripts/factory_version.sh
+  scripts/factory_session_start.sh -> factory-engine/scripts/factory_session_start.sh
+  .claude/settings.json           # gets a SessionStart hook: version check per session
   scripts/factory_env.sh          -> factory-engine/scripts/factory_env.sh
   scripts/factory_common.sh       -> factory-engine/scripts/factory_common.sh
   factory.env                     # real file, yours, per project
@@ -157,7 +160,7 @@ Two directories, and the split is the whole idea:
 - **`factory/`** — your project's own knowledge. Seeded once, then yours forever.
 
 `install.sh` also writes `factory/installed.txt`: the install mode, the engine
-commit, and every path the engine owns in this repo. Commit it — it is what
+commit and version, and every path the engine owns in this repo. Commit it — it is what
 lets an update tell engine files from yours.
 
 ### Updating
@@ -172,8 +175,9 @@ It pulls the engine (`git submodule update --remote` for a submodule,
 `git pull --ff-only` for a clone that lives elsewhere), then hands over to the
 **new** `install.sh`, so a skill added upstream gets linked. It refreshes copies
 in `--copy` installs, prunes links and copies that upstream dropped, and prints
-the engine commits that came in, plus any changed template and any `factory.env` setting this update added
-that changed. Your `factory/`, `factory.env`, specs and handoffs are never
+the engine commits that came in, the `CHANGELOG.md` entries between the version
+you had and the one you got, plus any changed template and any `factory.env`
+setting this update added. Your `factory/`, `factory.env`, specs and handoffs are never
 touched. Afterwards, `git status` and commit the submodule pointer and
 `factory/installed.txt` together.
 
@@ -184,6 +188,48 @@ touched. Afterwards, `git status` and commit the submodule pointer and
 - Installs from before `--update` existed: move the engine once by hand
   (`git submodule update --remote factory-engine`), then run `--update`. Stale
   links into the engine are found without the manifest.
+
+### Am I behind?
+
+```bash
+bash scripts/factory_version.sh
+```
+
+```
+mode:        project
+installed:   1.0.0
+engine:      1.0.0 (/path/to/your-project/factory-engine/VERSION)
+latest:      1.2.0 (newest v* tag on origin)
+status:      update available - v1.2.0 is out, this project is on 1.0.0: bash factory-engine/install.sh --update
+```
+
+It reads the newest `v*` release tag from the engine's remote with
+`git ls-remote` - nothing is fetched or moved - and caches the answer in
+`.factory-cache/` for `VERSION_TTL_MIN` minutes (default 720; `--refresh`
+skips the cache). The status is one of:
+
+| status | means |
+|---|---|
+| `up to date` | nothing to do |
+| `update required` | a newer **major** release: something you rely on changed. Read its `Action needed:` in `CHANGELOG.md`, then `--update` |
+| `update available` | a newer minor or patch release |
+| `re-run install` | the engine moved (a teammate bumped the submodule) but `install.sh` has not run since, so a new skill may be unlinked |
+| `unknown` | no release to compare with: offline, no remote, or a `--copy` install |
+
+Exit code is 0 either way, so it is safe in any script.
+
+**Agents check it for you, once per session.** `install.sh` adds a
+`SessionStart` hook to the project's `.claude/settings.json` (merged into what
+is there; a file it cannot parse is left alone and you get the snippet to add
+by hand). On every new Claude Code session - `startup` and `/clear`, not a
+resume - it runs `scripts/factory_session_start.sh`, which asks
+`factory_version.sh --refresh`. Up to date or unknown: nothing, the session
+starts as usual. Behind: the agent is told to run the update **before anything
+else**, pass on the `Action needed:` lines and new settings it prints, follow
+the Action needed steps of a major release (or ask you when one needs a
+decision), and tell you what to commit. It does not commit, and it does not
+check again mid-session. Commit `.claude/settings.json` so the whole team gets
+the hook.
 
 Symlinks mean nothing is copied, so nothing drifts between updates. On a
 filesystem without symlinks, use `bash factory-engine/install.sh --copy`;
@@ -657,7 +703,7 @@ And the harness has its own test suite, which needs no `agy`, no network and no
 money:
 
 ```bash
-bash scripts/selftest.sh          # ~25 seconds, 141 cases
+bash scripts/selftest.sh          # ~30 seconds, 196 cases
 bash scripts/selftest.sh --only lock
 bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
 ```
@@ -685,6 +731,32 @@ it and is worth handing to `agy`. The **prose** is instructions for a model, and
 its only real reviewer is a reader: that is what `personas/engine/builder.md` is
 for, and it costs nothing but a read-only subagent.
 
+## Releasing
+
+Nothing to do by hand: **every PR merged to `main` is a release.**
+`.github/workflows/release.yml` reads the merged PR's title, runs
+`scripts/release.sh` to write the next `VERSION` and its `CHANGELOG.md` entry,
+commits that to `main`, tags `v<version>` and publishes a GitHub release. The
+tag is what `factory_version.sh` in every client compares against.
+
+Versions are semver from the client's side, and the PR title picks the bump:
+
+| PR title | bump | client sees |
+|---|---|---|
+| `feat!: ...`, `fix(x)!: ...`, or `BREAKING CHANGE` in the body | major | `update required` |
+| `feat: ...`, `feat(x): ...` | minor | `update available` |
+| anything else (`fix:`, `docs:`, `test:`, ...) | patch | `update available` |
+
+So the one thing a PR author decides is the title. For a breaking change, add
+`Action needed: <what a project must do>` lines to the PR body - they are copied
+into the changelog entry. A major PR without one gets a pointer to the PR
+instead.
+
+To pick a number yourself, set `VERSION` and write its changelog entry in the
+PR: an untagged `VERSION` is released as is, and an entry already there is
+kept. `bash scripts/release.sh --help` shows the rules; the selftest covers
+them.
+
 ## Requirements
 
 - `agy` on `PATH` — [Antigravity CLI](https://antigravity.google)
@@ -696,6 +768,8 @@ for, and it costs nothing but a read-only subagent.
 ```
 PRINCIPLES.md                  # the rules every skill obeys
 install.sh                     # symlink harness into a target repo; --update
+VERSION                        # the engine's release, semver
+CHANGELOG.md                   # what each release means for a project
 skills/factory-think/SKILL.md  # Claude: run personas, write brief
 skills/factory-spec/SKILL.md   # Claude: write spec + handoff
 skills/factory-build/SKILL.md  # Claude: drive agy, loop, verify
@@ -709,9 +783,13 @@ personas/engine/               # lenses for changing the harness itself
 scripts/run_antigravity.sh     # call agy, tee log, lock, snapshot
 scripts/factory_lint.sh        # shape checks, free, no model call
 scripts/factory_state.sh       # where the run stopped, what to do next
+scripts/factory_version.sh     # installed vs newest release, update or not
+scripts/factory_session_start.sh # Claude SessionStart hook: update first if behind
 scripts/factory_env.sh         # mode, engine root, persona dirs
 scripts/factory_common.sh      # shared bones, sourced by every script
 scripts/selftest.sh            # the harness's own test suite, no agy needed
+scripts/release.sh             # next VERSION + CHANGELOG entry from a PR title
+.github/workflows/release.yml  # every merge to main: bump, tag, GitHub release
 agents/skills/                 # agy-side skills (empty by design)
 templates/brief.md             # shape of a brief
 templates/spec.md              # shape of a spec

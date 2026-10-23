@@ -1,0 +1,80 @@
+# caveman: every merge to main is a release. the PR title picks the bump
+# (feat!: major, feat: minor, anything else patch), scripts/release.sh writes
+# VERSION and the CHANGELOG entry, and this job commits, tags and publishes.
+# nobody types a version number or a git tag.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # push the release commit and the tag
+  pull-requests: read    # find the PR a merge commit came from
+
+# caveman: one release at a time, in merge order. two merges must not both
+# read the same VERSION and cut the same number.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # caveman: the release commit is pushed with GITHUB_TOKEN, which never
+    # starts a workflow - this guard is the belt to that brace.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main          # newest main, not the triggering sha - a queued run must see the release before it
+          fetch-depth: 0     # tags and history, to know what is already released
+
+      - name: Find the merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" > pulls.json || echo '[]' > pulls.json
+          if [ "$(jq length pulls.json)" -gt 0 ]; then
+            jq -r '.[0].title'        pulls.json > pr-title.txt
+            jq -r '.[0].body // ""'   pulls.json > pr-body.txt
+            jq -r '.[0].html_url'     pulls.json > pr-url.txt
+          else
+            # caveman: a direct push to main has no PR. its commit message stands in.
+            git log -1 --format=%s "${{ github.sha }}" > pr-title.txt
+            git log -1 --format=%b "${{ github.sha }}" > pr-body.txt
+            : > pr-url.txt
+          fi
+          echo "title: $(cat pr-title.txt)"
+
+      - name: Bump VERSION and CHANGELOG
+        id: bump
+        run: |
+          PREV="$(cat VERSION)"
+          NEXT="$(bash scripts/release.sh --title "$(cat pr-title.txt)" --body pr-body.txt --url "$(cat pr-url.txt)")"
+          echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "release: $PREV -> $NEXT"
+
+      - name: Commit, push, tag
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION CHANGELOG.md
+          git diff --cached --quiet || git commit -m "release: v$VERSION [skip ci]"
+          # caveman: a merge landed while this ran - replay on top of it once.
+          # the tag comes after, so it always names the commit that is on main.
+          git push origin HEAD:main || { git pull --rebase origin main && git push origin HEAD:main; }
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          # caveman: the notes are this version's changelog entry, minus its heading.
+          awk -v v="$VERSION" '/^## / { on = ($2 == v); next } on' CHANGELOG.md > notes.md
+          gh release create "v$VERSION" --title "v$VERSION" --notes-file notes.md --verify-tag

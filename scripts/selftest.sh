@@ -218,7 +218,7 @@ if [ "$GROUP_ON" = 1 ]; then
   counts "$R/.claude/skills/factory-*" 5
 
   t "links the shared scripts"
-  counts "$R/scripts/factory_*.sh" 4
+  counts "$R/scripts/factory_*.sh" 6
   t "links the runner"
   exists "$R/scripts/run_antigravity.sh"
 
@@ -379,6 +379,224 @@ if [ "$GROUP_ON" = 1 ]; then
   lacks "new setting:"
 
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+fi
+
+# ---------------------------------------------------------------- version
+group "version"
+if [ "$GROUP_ON" = 1 ]; then
+  t "VERSION is X.Y.Z"
+  run "$ENGINE" grep -qxE '[0-9]+\.[0-9]+\.[0-9]+' VERSION
+  rc_is 0
+  t "and the newest CHANGELOG entry is that version"
+  is "$(sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' "$ENGINE/CHANGELOG.md" | head -1)" "$(cat "$ENGINE/VERSION")"
+
+  t "versions compare as numbers, not as strings"
+  is "$(. "$ENGINE/scripts/factory_common.sh"; factory_ver_cmp 1.10.0 1.9.0)" "1"
+
+  # caveman: a released upstream, tagged the way a release is tagged.
+  VU="$WORK/vupstream"
+  mkdir -p "$VU"
+  ( cd "$ENGINE" && tar cf - --exclude .git --exclude .factory-cache . ) | ( cd "$VU" && tar xf - )
+  rm -f "$VU/factory/installed.txt"
+  ( cd "$VU" && printf '1.0.0\n' > VERSION && git init -q . && git config user.email t@example.com &&
+    git config user.name t && git add -A && git commit -qm base >/dev/null 2>&1 && git tag v1.0.0 )
+  release() { # release <version> <note>  - VERSION, changelog entry, tag
+    ( cd "$VU" && printf '%s\n' "$1" > VERSION &&
+      { sed -n '1,/^## /p' CHANGELOG.md | sed '$d'; printf '## %s - 2026-01-01\n\n- %s\n\n' "$1" "$2";
+        sed -n '/^## /,$p' CHANGELOG.md; } > CHANGELOG.md.new && mv CHANGELOG.md.new CHANGELOG.md &&
+      git commit -qam "release $1" && git tag "v$1" )
+  }
+  VC="$WORK/vengine"
+  git clone -q "$VU" "$VC"
+  V="$WORK/versioned"
+  mkdir -p "$V"
+  ( cd "$V" && git init -q . && git config user.email t@example.com && git config user.name t )
+  bash "$VC/install.sh" "$V" >/dev/null 2>&1
+
+  t "install records the version in the manifest"
+  run "$V" grep -qxF "version: 1.0.0" factory/installed.txt
+  rc_is 0
+  t "the version script is linked into the project"
+  [ -L "$V/scripts/factory_version.sh" ] && ok || bad "scripts/factory_version.sh is not a link"
+
+  t "on the newest release -> up to date"
+  run "$V" bash scripts/factory_version.sh
+  rc_is 0
+  has "status:      up to date"
+  t "and names all three numbers"
+  has "latest:      1.0.0"
+
+  release 1.1.0 "a shiny new check"
+  t "a cached answer does not ask upstream again"
+  run "$V" bash scripts/factory_version.sh
+  has "up to date"
+  t "--refresh does, and finds the minor release"
+  run "$V" bash scripts/factory_version.sh --refresh
+  has "update available - v1.1.0"
+  t "with the command that takes it"
+  has "install.sh --update"
+  t "--short prints the status line only"
+  run "$V" bash scripts/factory_version.sh --short
+  is "$(printf '%s\n' "$LAST_OUT" | wc -l | tr -d ' ')" "1"
+  t "the full output names the command on a next: line"
+  run "$V" bash scripts/factory_version.sh
+  has "next:        bash $VC/install.sh --update"
+
+  t "install wires the session hook into .claude/settings.json"
+  run "$V" grep -q 'scripts/factory_session_start.sh' .claude/settings.json
+  rc_is 0
+  t "for new sessions only, not resumes"
+  run "$V" grep -q '"startup|clear"' .claude/settings.json
+  rc_is 0
+  t "behind -> the session hook tells the agent to update first"
+  LAST_OUT="$(cd "$V" && CLAUDE_PROJECT_DIR="$V" bash scripts/factory_session_start.sh 2>&1)"; LAST_RC=$?
+  rc_is 0
+  has "Before anything else"
+  t "with the exact command"
+  has "bash $VC/install.sh --update"
+  t "as valid hook JSON"
+  printf '%s' "$LAST_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin)["hookSpecificOutput"]; assert d["hookEventName"]=="SessionStart" and d["additionalContext"]' 2>/dev/null &&
+    ok || bad "not SessionStart hook JSON" "$LAST_OUT"
+
+  t "--update prints the version move"
+  run "$V" bash "$VC/install.sh" --update
+  has "version: 1.0.0 -> 1.1.0"
+  t "and the changelog entry that came in"
+  has "a shiny new check"
+  t "but not the entries it already had"
+  lacks "## 1.0.0"
+  t "and records the new version"
+  run "$V" grep -qxF "version: 1.1.0" factory/installed.txt
+  rc_is 0
+  t "up to date -> the session hook says nothing"
+  LAST_OUT="$(cd "$V" && CLAUDE_PROJECT_DIR="$V" bash scripts/factory_session_start.sh 2>&1)"; LAST_RC=$?
+  rc_is 0
+  is "$LAST_OUT" ""
+  t "--update does not wire the hook twice"
+  is "$(grep -c factory_session_start.sh "$V/.claude/settings.json")" "1"
+
+  release 2.0.0 "a breaking change"
+  t "a newer major release -> update required"
+  run "$V" bash scripts/factory_version.sh --refresh
+  has "update required - v2.0.0"
+  t "pointing at the changelog"
+  has "CHANGELOG.md"
+
+  t "an engine moved without install.sh -> re-run install"
+  ( cd "$VC" && git pull -q --ff-only )
+  run "$V" bash scripts/factory_version.sh
+  has "re-run install"
+
+  t "an unreachable upstream -> the last answer, said so"
+  ( cd "$VC" && git remote set-url origin "$WORK/nowhere" )
+  run "$V" bash scripts/factory_version.sh --refresh
+  rc_is 0
+  has "using the last answer"
+  t "and with no answer at all -> unknown, still exit 0"
+  rm -f "$V/.factory-cache/latest-version.txt"
+  bash "$VC/install.sh" "$V" --update --no-pull >/dev/null 2>&1
+  run "$V" bash scripts/factory_version.sh
+  rc_is 0
+  has "status:      unknown"
+
+  t "the hook merges into settings the project already has"
+  VS="$WORK/vsettings"
+  mkdir -p "$VS/.claude"
+  ( cd "$VS" && git init -q . )
+  printf '{"permissions": {"allow": ["Bash(ls)"]}}\n' > "$VS/.claude/settings.json"
+  bash "$VC/install.sh" "$VS" >/dev/null 2>&1
+  run "$VS" grep -q 'Bash(ls)' .claude/settings.json
+  rc_is 0
+  run "$VS" grep -q 'factory_session_start.sh' .claude/settings.json
+  rc_is 0
+  t "and leaves settings it cannot parse alone"
+  VB="$WORK/vbadsettings"
+  mkdir -p "$VB/.claude"
+  ( cd "$VB" && git init -q . )
+  printf 'not json\n' > "$VB/.claude/settings.json"
+  run "$VB" bash "$VC/install.sh" "$VB"
+  rc_is 0
+  has "skip  version hook"
+  is "$(cat "$VB/.claude/settings.json")" "not json"
+
+  t "a copy install still knows what it has"
+  VK="$WORK/vcopied"
+  mkdir -p "$VK"
+  ( cd "$VK" && git init -q . )
+  bash "$VC/install.sh" "$VK" --copy >/dev/null 2>&1
+  run "$VK" bash scripts/factory_version.sh
+  has "installed:   2.0.0"
+  t "and does not pretend to be the engine"
+  has "copy install"
+  lacks "mode:        self"
+
+  t "in the engine, a VERSION with no tag -> unreleased"
+  ( cd "$VC" && git remote set-url origin "$VU" && printf '2.1.0\n' > VERSION )
+  run "$VC" bash scripts/factory_version.sh --refresh
+  has "unreleased - VERSION 2.1.0 has no tag yet"
+fi
+
+# ---------------------------------------------------------------- release
+group "release"
+if [ "$GROUP_ON" = 1 ]; then
+  # caveman: what the release workflow runs on every merge to main. a copy of
+  # the engine, so the real VERSION and CHANGELOG are never touched.
+  RL="$WORK/release"
+  mkdir -p "$RL"
+  ( cd "$ENGINE" && tar cf - --exclude .git --exclude .factory-cache . ) | ( cd "$RL" && tar xf - )
+  ( cd "$RL" && printf '1.0.0\n' > VERSION && git init -q . && git config user.email t@example.com &&
+    git config user.name t && git add -A && git commit -qm base >/dev/null 2>&1 && git tag v1.0.0 )
+  cut_release() { # cut_release <title> [body]  - as the workflow does, then tag
+    printf '%s\n' "${2:-}" > "$RL/body.txt"
+    run "$RL" bash scripts/release.sh --title "$1" --body body.txt --url "https://example.com/pull/9" --date 2026-01-01
+    ( cd "$RL" && git commit -qam "release" && git tag "v$(cat VERSION)" )
+  }
+  top_entry() { sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' "$RL/CHANGELOG.md" | head -1; }
+
+  t "a fix -> patch"
+  cut_release "fix: the lint misses a heading"
+  is "$LAST_OUT" "1.0.1"
+  t "VERSION and the newest changelog entry agree"
+  is "$(top_entry)" "$(cat "$RL/VERSION")"
+  t "the entry is the title without its prefix, with the PR link"
+  run "$RL" grep -qxF -- "- the lint misses a heading (https://example.com/pull/9)" CHANGELOG.md
+  rc_is 0
+
+  t "a feat -> minor"
+  cut_release "feat(check): a new red flag"
+  is "$LAST_OUT" "1.1.0"
+  t "anything else -> patch"
+  cut_release "docs: typo"
+  is "$LAST_OUT" "1.1.1"
+
+  t "a breaking title -> major"
+  cut_release "feat!: handoffs move to a new format"
+  is "$LAST_OUT" "2.0.0"
+  t "with an Action needed pointer when the PR gave none"
+  run "$RL" grep -q "^Action needed: breaking change, read https://example.com/pull/9" CHANGELOG.md
+  rc_is 0
+  t "BREAKING CHANGE in the body -> major too"
+  cut_release "refactor: rename a setting" "BREAKING CHANGE: AGY_TIMEOUT is gone
+Action needed: rename AGY_TIMEOUT to AGY_ROUND_TIMEOUT in factory.env"
+  is "$LAST_OUT" "3.0.0"
+  t "and the PR's own Action needed lands in the entry"
+  run "$RL" grep -qxF "Action needed: rename AGY_TIMEOUT to AGY_ROUND_TIMEOUT in factory.env" CHANGELOG.md
+  rc_is 0
+  t "newest entry first"
+  is "$(top_entry)" "3.0.0"
+
+  t "a VERSION set by hand and not tagged is released as is"
+  ( cd "$RL" && printf '5.0.0\n' > VERSION &&
+    awk '!d && /^## [0-9]/ { print "## 5.0.0 - 2026-01-01\n\n- written by hand\n"; d=1 } { print }' CHANGELOG.md > c.new &&
+    mv c.new CHANGELOG.md && git commit -qam "hand" )
+  run "$RL" bash scripts/release.sh --title "feat: whatever"
+  is "$LAST_OUT" "5.0.0"
+  t "keeping the entry written by hand, not adding a second"
+  is "$(grep -c '^## 5.0.0 ' "$RL/CHANGELOG.md")" "1"
+
+  t "no --title is an error"
+  run "$RL" bash scripts/release.sh
+  rc_is 2
 fi
 
 # ------------------------------------------------------ self-development

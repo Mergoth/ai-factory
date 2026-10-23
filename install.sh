@@ -6,6 +6,7 @@ usage() {
   cat <<'USAGE'
 usage: bash factory-engine/install.sh [target-repo-dir] [--copy] [--force]
        bash factory-engine/install.sh [target-repo-dir] --update [--no-pull]
+       bash factory-engine/scripts/factory_version.sh   (am I behind?)
 
 run it inside the harness repo itself to get self-development mode: the same
 skills and scripts, working on the harness, with TEST_CMD set to its selftest.
@@ -17,7 +18,8 @@ skills and scripts, working on the harness, with TEST_CMD set to its selftest.
   --update         bring an installed repo to the newest engine, in one go:
                    pull the engine (submodule update --remote, or git pull
                    --ff-only for a clone), re-link, refresh copies, prune what
-                   upstream removed, and print the engine commits that came in.
+                   upstream removed, and print the engine commits and the
+                   CHANGELOG.md entries that came in.
                    copy mode is remembered, no need to pass --copy again.
   --no-pull        with --update: skip the pull, only re-link and prune.
 
@@ -31,6 +33,9 @@ creates in the target repo:
   scripts/*.sh                   -> runner, lint, state, env, shared lib
   scripts/factory_lint.sh        -> shape checks, free and deterministic
   scripts/factory_state.sh       -> where the run stopped, what to do next
+  scripts/factory_version.sh     -> installed vs newest release, update or not
+  .claude/settings.json          -> SessionStart hook: every new Claude session
+                                    checks the engine version and updates first
   specs/  handoffs/              -> empty, with .gitkeep
   factory/                       -> project brain: context, adr, briefs,
                                     memory, improvements, personas,
@@ -41,6 +46,8 @@ USAGE
 }
 
 FACTORY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/factory_common.sh
+. "$FACTORY_DIR/scripts/factory_common.sh"
 TARGET=""
 MODE=""
 FORCE=0
@@ -89,6 +96,7 @@ MANIFEST="$REPO_ROOT/factory/installed.txt"
 manifest_get() { sed -n "s/^$1: //p" "$MANIFEST" 2>/dev/null | head -1 || true; }
 OLD_MODE="$(manifest_get mode)"
 OLD_REV="$(manifest_get engine)"
+OLD_VER="$(manifest_get version)"
 OLD_PATHS="$(sed -n 's/^path: //p' "$MANIFEST" 2>/dev/null || true)"
 NEW_PATHS=""
 
@@ -202,6 +210,8 @@ if [ "$SELF_MODE" -eq 0 ]; then
   install_one "scripts/run_antigravity.sh" "scripts/run_antigravity.sh"
   install_one "scripts/factory_lint.sh"    "scripts/factory_lint.sh"
   install_one "scripts/factory_state.sh"   "scripts/factory_state.sh"
+  install_one "scripts/factory_version.sh" "scripts/factory_version.sh"
+  install_one "scripts/factory_session_start.sh" "scripts/factory_session_start.sh"
   install_one "scripts/factory_env.sh"     "scripts/factory_env.sh"
   install_one "scripts/factory_common.sh"  "scripts/factory_common.sh"
 else
@@ -279,6 +289,44 @@ else
   echo "  new   factory.env  <- EDIT THIS, set TEST_CMD"
 fi
 
+# caveman: every new Claude session here checks the engine version before it
+# does anything else. settings.json is the project's own file - merge the hook
+# in, never replace the file, and leave it alone if it cannot be read.
+HOOK_CMD='bash "$CLAUDE_PROJECT_DIR/scripts/factory_session_start.sh"'
+SETTINGS="$REPO_ROOT/.claude/settings.json"
+install_hook() {
+  if [ -f "$SETTINGS" ] && grep -qF "factory_session_start.sh" "$SETTINGS"; then
+    [ "$UPDATE" -eq 1 ] || echo "  keep  .claude/settings.json (version hook already there)"
+    return 0
+  fi
+  mkdir -p "$REPO_ROOT/.claude"
+  [ -s "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+  # caveman: set -e is on - a merge that fails must land in the else, not exit.
+  local merged=0
+  if command -v jq >/dev/null 2>&1; then
+    jq --arg cmd "$HOOK_CMD" '.hooks.SessionStart += [{"matcher": "startup|clear",
+        "hooks": [{"type": "command", "command": $cmd, "timeout": 30}]}]' \
+      "$SETTINGS" > "$SETTINGS.new" 2>/dev/null && merged=1
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "$SETTINGS" "$HOOK_CMD" > "$SETTINGS.new" 2>/dev/null <<'PY' && merged=1
+import json, sys
+s = json.load(open(sys.argv[1]))
+s.setdefault("hooks", {}).setdefault("SessionStart", []).append({"matcher": "startup|clear",
+    "hooks": [{"type": "command", "command": sys.argv[2], "timeout": 30}]})
+print(json.dumps(s, indent=2))
+PY
+  fi
+  if [ "$merged" -eq 1 ] && [ -s "$SETTINGS.new" ]; then
+    mv "$SETTINGS.new" "$SETTINGS"
+    echo "  hook  .claude/settings.json  SessionStart -> scripts/factory_session_start.sh"
+  else
+    rm -f "$SETTINGS.new"
+    echo "  skip  version hook - .claude/settings.json is not valid JSON, or no jq/python3 to merge it."
+    echo "        add a SessionStart hook by hand running: $HOOK_CMD"
+  fi
+}
+[ "$SELF_MODE" -eq 1 ] || install_hook
+
 # caveman: logs are noise, keep them out of git.
 GI="$REPO_ROOT/.gitignore"
 add_ignore() {
@@ -290,12 +338,16 @@ add_ignore ".factory-cache/"
 
 NEW_REV="$(engine_rev)"
 [ "$SELF_MODE" -eq 1 ] && NEW_REV="self"
+# caveman: the version comes from a file, not from git, so a copied engine with
+# no history of its own still says which release it is.
+NEW_VER="$(factory_engine_version "$FACTORY_DIR")"
 {
   echo "# caveman: written by install.sh - what the engine owns in this repo, so"
   echo "# install.sh --update can refresh it and prune what upstream removed."
   echo "# do not edit. commit it."
   echo "mode: $MODE"
   echo "engine: ${NEW_REV:-unknown}"
+  echo "version: ${NEW_VER:-unknown}"
   printf '%s\n' "$NEW_PATHS" | sed '/^$/d; s/^/path: /'
 } > "$MANIFEST"
 
@@ -333,6 +385,17 @@ if [ "$UPDATE" -eq 1 ]; then
         echo "new setting: $k (see factory.env.example)"
     done
   fi
+  # caveman: commits say what changed, the changelog says what it means for you.
+  if [ -n "$NEW_VER" ] && [ "$SELF_MODE" -eq 0 ]; then
+    FROM_VER="$OLD_VER"
+    factory_is_ver "$FROM_VER" || FROM_VER="0.0.0"
+    if [ "$(factory_ver_cmp "$NEW_VER" "$FROM_VER")" = 1 ]; then
+      echo "version: ${OLD_VER:-none} -> $NEW_VER - from CHANGELOG.md:"
+      factory_changelog_between "$FACTORY_DIR/CHANGELOG.md" "$FROM_VER" "$NEW_VER" | sed 's/^/  /'
+    else
+      echo "version: $NEW_VER"
+    fi
+  fi
   [ -z "$PRUNED" ] || echo "pruned: $PRUNED"
   echo
   echo "done. review and commit: git -C $REPO_ROOT status"
@@ -356,4 +419,5 @@ echo
 echo "manual route, if you want to drive it yourself:"
 echo "  bash scripts/run_antigravity.sh <slug>  then  /factory-check <slug>"
 echo
-echo "later, to take the newest engine:  bash <engine>/install.sh --update"
+echo "later, to see if you are behind:   bash scripts/factory_version.sh"
+echo "and to take the newest engine:     bash <engine>/install.sh --update"
