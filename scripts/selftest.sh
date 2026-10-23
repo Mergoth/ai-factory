@@ -218,7 +218,7 @@ if [ "$GROUP_ON" = 1 ]; then
   counts "$R/.claude/skills/factory-*" 5
 
   t "links the shared scripts"
-  counts "$R/scripts/factory_*.sh" 5
+  counts "$R/scripts/factory_*.sh" 6
   t "links the runner"
   exists "$R/scripts/run_antigravity.sh"
 
@@ -438,6 +438,25 @@ if [ "$GROUP_ON" = 1 ]; then
   t "--short prints the status line only"
   run "$V" bash scripts/factory_version.sh --short
   is "$(printf '%s\n' "$LAST_OUT" | wc -l | tr -d ' ')" "1"
+  t "the full output names the command on a next: line"
+  run "$V" bash scripts/factory_version.sh
+  has "next:        bash $VC/install.sh --update"
+
+  t "install wires the session hook into .claude/settings.json"
+  run "$V" grep -q 'scripts/factory_session_start.sh' .claude/settings.json
+  rc_is 0
+  t "for new sessions only, not resumes"
+  run "$V" grep -q '"startup|clear"' .claude/settings.json
+  rc_is 0
+  t "behind -> the session hook tells the agent to update first"
+  LAST_OUT="$(cd "$V" && CLAUDE_PROJECT_DIR="$V" bash scripts/factory_session_start.sh 2>&1)"; LAST_RC=$?
+  rc_is 0
+  has "Before anything else"
+  t "with the exact command"
+  has "bash $VC/install.sh --update"
+  t "as valid hook JSON"
+  printf '%s' "$LAST_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin)["hookSpecificOutput"]; assert d["hookEventName"]=="SessionStart" and d["additionalContext"]' 2>/dev/null &&
+    ok || bad "not SessionStart hook JSON" "$LAST_OUT"
 
   t "--update prints the version move"
   run "$V" bash "$VC/install.sh" --update
@@ -449,6 +468,12 @@ if [ "$GROUP_ON" = 1 ]; then
   t "and records the new version"
   run "$V" grep -qxF "version: 1.1.0" factory/installed.txt
   rc_is 0
+  t "up to date -> the session hook says nothing"
+  LAST_OUT="$(cd "$V" && CLAUDE_PROJECT_DIR="$V" bash scripts/factory_session_start.sh 2>&1)"; LAST_RC=$?
+  rc_is 0
+  is "$LAST_OUT" ""
+  t "--update does not wire the hook twice"
+  is "$(grep -c factory_session_start.sh "$V/.claude/settings.json")" "1"
 
   release 2.0.0 "a breaking change"
   t "a newer major release -> update required"
@@ -473,6 +498,26 @@ if [ "$GROUP_ON" = 1 ]; then
   run "$V" bash scripts/factory_version.sh
   rc_is 0
   has "status:      unknown"
+
+  t "the hook merges into settings the project already has"
+  VS="$WORK/vsettings"
+  mkdir -p "$VS/.claude"
+  ( cd "$VS" && git init -q . )
+  printf '{"permissions": {"allow": ["Bash(ls)"]}}\n' > "$VS/.claude/settings.json"
+  bash "$VC/install.sh" "$VS" >/dev/null 2>&1
+  run "$VS" grep -q 'Bash(ls)' .claude/settings.json
+  rc_is 0
+  run "$VS" grep -q 'factory_session_start.sh' .claude/settings.json
+  rc_is 0
+  t "and leaves settings it cannot parse alone"
+  VB="$WORK/vbadsettings"
+  mkdir -p "$VB/.claude"
+  ( cd "$VB" && git init -q . )
+  printf 'not json\n' > "$VB/.claude/settings.json"
+  run "$VB" bash "$VC/install.sh" "$VB"
+  rc_is 0
+  has "skip  version hook"
+  is "$(cat "$VB/.claude/settings.json")" "not json"
 
   t "a copy install still knows what it has"
   VK="$WORK/vcopied"

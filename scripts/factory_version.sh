@@ -22,7 +22,8 @@ and prints one status:
   unknown           no release could be looked up (offline, no remote,
                     copy install) - the local numbers are still printed
 
-  --short    only the status line
+  --short    only the status line. the full output adds a next: line with
+             the command to run, when there is one
   --refresh  ask upstream now instead of using the cached answer
 
 the upstream answer is cached in .factory-cache/latest-version.txt for
@@ -123,6 +124,10 @@ lookup_latest
 
 major() { printf '%s\n' "${1%%.*}"; }
 
+# caveman: the command that fixes it, on a line of its own - so the session
+# hook does not have to cut it out of a sentence.
+NEXT=""
+
 if [ "$MODE" = "self" ]; then
   # caveman: in the engine itself "behind" means a release nobody tagged, or a
   # checkout older than what is already out.
@@ -142,11 +147,14 @@ else
   # installed version; otherwise the links already serve the engine checkout.
   HAVE="${ENGINE_VER:-$INSTALLED}"
   if [ -n "$LATEST" ] && [ -n "$HAVE" ] && [ "$(major "$LATEST")" -gt "$(major "$HAVE")" ]; then
-    STATUS="update required - v$LATEST is a major release past $HAVE. read its Action needed in CHANGELOG.md, then: $INSTALL --update"
+    NEXT="$INSTALL --update"
+    STATUS="update required - v$LATEST is a major release past $HAVE. read its Action needed in CHANGELOG.md, then: $NEXT"
   elif [ -n "$LATEST" ] && [ -n "$HAVE" ] && [ "$(factory_ver_cmp "$LATEST" "$HAVE")" = 1 ]; then
-    STATUS="update available - v$LATEST is out, this project is on $HAVE: $INSTALL --update"
+    NEXT="$INSTALL --update"
+    STATUS="update available - v$LATEST is out, this project is on $HAVE: $NEXT"
   elif [ -n "$ENGINE_VER" ] && { [ -z "$INSTALLED" ] || [ "$(factory_ver_cmp "$ENGINE_VER" "$INSTALLED")" = 1 ]; }; then
-    STATUS="re-run install - the engine is at $ENGINE_VER but install.sh last ran for ${INSTALLED:-a version before 1.0.0}: $INSTALL --update --no-pull"
+    NEXT="$INSTALL --update --no-pull"
+    STATUS="re-run install - the engine is at $ENGINE_VER but install.sh last ran for ${INSTALLED:-a version before 1.0.0}: $NEXT"
   elif [ -z "$LATEST" ]; then
     STATUS="unknown - $LATEST_FROM. this project is on ${HAVE:-an unversioned engine}"
   else
@@ -163,4 +171,5 @@ printf 'installed:   %s\n' "${INSTALLED:-none recorded (installed before 1.0.0)}
 printf 'engine:      %s\n' "${ENGINE_VER:-unknown}$([ "$COPY" -eq 0 ] && echo " ($ENGINE/VERSION)" || true)"
 printf 'latest:      %s\n' "${LATEST:-unknown}${LATEST_FROM:+ ($LATEST_FROM)}"
 printf 'status:      %s\n' "$STATUS"
+[ -z "$NEXT" ] || printf 'next:        %s\n' "$NEXT"
 exit 0

@@ -28,8 +28,10 @@ that predate it record no version and are treated as older than 1.0.0.
 - `VERSION`, this changelog, and `v*` release tags, cut automatically on every
   merge to `main` by `.github/workflows/release.yml`.
 - `scripts/factory_version.sh`: installed vs engine vs newest release, and
-  whether the project is up to date, behind, or must update. `/factory-check`
-  runs it and passes a "behind" on to you.
+  whether the project is up to date, behind, or must update.
+- A Claude Code `SessionStart` hook in `.claude/settings.json`: every new
+  session checks the version and, when behind, the agent updates the engine
+  before doing anything else.
 - `factory/installed.txt` records the engine version, also for copied installs
   with no git history of their own.
 - `install.sh --update` prints the changelog entries the update brought in.
@@ -38,5 +40,5 @@ that predate it record no version and are treated as older than 1.0.0.
   `factory/`, self-development mode, the selftest suite, the upstream
   improvements inbox, and `install.sh --update`.
 
-Action needed: commit `factory/installed.txt` after your next `--update`, so the
-version it now records is shared with the rest of the team.
+Action needed: commit `factory/installed.txt` and `.claude/settings.json` after
+your next `--update`, so the version and the session hook reach the whole team.

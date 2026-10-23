@@ -134,6 +134,8 @@ your-project/
   scripts/factory_lint.sh         -> factory-engine/scripts/factory_lint.sh
   scripts/factory_state.sh        -> factory-engine/scripts/factory_state.sh
   scripts/factory_version.sh      -> factory-engine/scripts/factory_version.sh
+  scripts/factory_session_start.sh -> factory-engine/scripts/factory_session_start.sh
+  .claude/settings.json           # gets a SessionStart hook: version check per session
   scripts/factory_env.sh          -> factory-engine/scripts/factory_env.sh
   scripts/factory_common.sh       -> factory-engine/scripts/factory_common.sh
   factory.env                     # real file, yours, per project
@@ -214,8 +216,20 @@ skips the cache). The status is one of:
 | `re-run install` | the engine moved (a teammate bumped the submodule) but `install.sh` has not run since, so a new skill may be unlinked |
 | `unknown` | no release to compare with: offline, no remote, or a `--copy` install |
 
-`/factory-check` runs it on every check and tells you when you are behind; it
-never changes a verdict. Exit code is 0 either way, so it is safe in any script.
+Exit code is 0 either way, so it is safe in any script.
+
+**Agents check it for you, once per session.** `install.sh` adds a
+`SessionStart` hook to the project's `.claude/settings.json` (merged into what
+is there; a file it cannot parse is left alone and you get the snippet to add
+by hand). On every new Claude Code session - `startup` and `/clear`, not a
+resume - it runs `scripts/factory_session_start.sh`, which asks
+`factory_version.sh --refresh`. Up to date or unknown: nothing, the session
+starts as usual. Behind: the agent is told to run the update **before anything
+else**, pass on the `Action needed:` lines and new settings it prints, follow
+the Action needed steps of a major release (or ask you when one needs a
+decision), and tell you what to commit. It does not commit, and it does not
+check again mid-session. Commit `.claude/settings.json` so the whole team gets
+the hook.
 
 Symlinks mean nothing is copied, so nothing drifts between updates. On a
 filesystem without symlinks, use `bash factory-engine/install.sh --copy`;
@@ -689,7 +703,7 @@ And the harness has its own test suite, which needs no `agy`, no network and no
 money:
 
 ```bash
-bash scripts/selftest.sh          # ~30 seconds, 181 cases
+bash scripts/selftest.sh          # ~30 seconds, 196 cases
 bash scripts/selftest.sh --only lock
 bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
 ```
@@ -770,6 +784,7 @@ scripts/run_antigravity.sh     # call agy, tee log, lock, snapshot
 scripts/factory_lint.sh        # shape checks, free, no model call
 scripts/factory_state.sh       # where the run stopped, what to do next
 scripts/factory_version.sh     # installed vs newest release, update or not
+scripts/factory_session_start.sh # Claude SessionStart hook: update first if behind
 scripts/factory_env.sh         # mode, engine root, persona dirs
 scripts/factory_common.sh      # shared bones, sourced by every script
 scripts/selftest.sh            # the harness's own test suite, no agy needed

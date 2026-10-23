@@ -34,6 +34,8 @@ creates in the target repo:
   scripts/factory_lint.sh        -> shape checks, free and deterministic
   scripts/factory_state.sh       -> where the run stopped, what to do next
   scripts/factory_version.sh     -> installed vs newest release, update or not
+  .claude/settings.json          -> SessionStart hook: every new Claude session
+                                    checks the engine version and updates first
   specs/  handoffs/              -> empty, with .gitkeep
   factory/                       -> project brain: context, adr, briefs,
                                     memory, improvements, personas,
@@ -209,6 +211,7 @@ if [ "$SELF_MODE" -eq 0 ]; then
   install_one "scripts/factory_lint.sh"    "scripts/factory_lint.sh"
   install_one "scripts/factory_state.sh"   "scripts/factory_state.sh"
   install_one "scripts/factory_version.sh" "scripts/factory_version.sh"
+  install_one "scripts/factory_session_start.sh" "scripts/factory_session_start.sh"
   install_one "scripts/factory_env.sh"     "scripts/factory_env.sh"
   install_one "scripts/factory_common.sh"  "scripts/factory_common.sh"
 else
@@ -285,6 +288,44 @@ else
   cp "$FACTORY_DIR/factory.env.example" "$REPO_ROOT/factory.env"
   echo "  new   factory.env  <- EDIT THIS, set TEST_CMD"
 fi
+
+# caveman: every new Claude session here checks the engine version before it
+# does anything else. settings.json is the project's own file - merge the hook
+# in, never replace the file, and leave it alone if it cannot be read.
+HOOK_CMD='bash "$CLAUDE_PROJECT_DIR/scripts/factory_session_start.sh"'
+SETTINGS="$REPO_ROOT/.claude/settings.json"
+install_hook() {
+  if [ -f "$SETTINGS" ] && grep -qF "factory_session_start.sh" "$SETTINGS"; then
+    [ "$UPDATE" -eq 1 ] || echo "  keep  .claude/settings.json (version hook already there)"
+    return 0
+  fi
+  mkdir -p "$REPO_ROOT/.claude"
+  [ -s "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+  # caveman: set -e is on - a merge that fails must land in the else, not exit.
+  local merged=0
+  if command -v jq >/dev/null 2>&1; then
+    jq --arg cmd "$HOOK_CMD" '.hooks.SessionStart += [{"matcher": "startup|clear",
+        "hooks": [{"type": "command", "command": $cmd, "timeout": 30}]}]' \
+      "$SETTINGS" > "$SETTINGS.new" 2>/dev/null && merged=1
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "$SETTINGS" "$HOOK_CMD" > "$SETTINGS.new" 2>/dev/null <<'PY' && merged=1
+import json, sys
+s = json.load(open(sys.argv[1]))
+s.setdefault("hooks", {}).setdefault("SessionStart", []).append({"matcher": "startup|clear",
+    "hooks": [{"type": "command", "command": sys.argv[2], "timeout": 30}]})
+print(json.dumps(s, indent=2))
+PY
+  fi
+  if [ "$merged" -eq 1 ] && [ -s "$SETTINGS.new" ]; then
+    mv "$SETTINGS.new" "$SETTINGS"
+    echo "  hook  .claude/settings.json  SessionStart -> scripts/factory_session_start.sh"
+  else
+    rm -f "$SETTINGS.new"
+    echo "  skip  version hook - .claude/settings.json is not valid JSON, or no jq/python3 to merge it."
+    echo "        add a SessionStart hook by hand running: $HOOK_CMD"
+  fi
+}
+[ "$SELF_MODE" -eq 1 ] || install_hook
 
 # caveman: logs are noise, keep them out of git.
 GI="$REPO_ROOT/.gitignore"

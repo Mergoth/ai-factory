@@ -20,7 +20,6 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    ```
    bash scripts/factory_lint.sh <slug>
    bash scripts/factory_state.sh <slug>
-   bash scripts/factory_version.sh --short
    ```
 
    The lint decides everything a rule can decide - missing sections, an invalid
@@ -30,8 +29,6 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
    spend a token finding, and `log_state` from the state script tells you at once
    whether the round you are judging even finished. Read what is left with your
    own eyes; do not re-derive what the script already proved (principle 14).
-   The version line is about the engine, not about this round: it never changes
-   the verdict and never goes in the status block. Keep it for step 9.
 
 2. **Read everything.** All of it, in full:
    - `factory/briefs/<slug>.md`, if it exists - the WHY. "What done looks like"
@@ -171,9 +168,6 @@ caveman: read what agy did, run test self, write verdict in handoff. no code cha
      point them at `/factory-reflect <slug>` - the run is only finished once it
      has taught the factory something.
    - Needs fix -> print `bash scripts/run_antigravity.sh <slug>` to run again.
-   - Either way, if the version status from step 1b starts with `update
-     required`, `update available` or `re-run install`, end with that line as it
-     was printed, command included. `up to date` and `unknown` - say nothing.
 
 ## Rules
 
