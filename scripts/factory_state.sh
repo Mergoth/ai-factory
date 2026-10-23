@@ -61,6 +61,33 @@ factory_load_env "$REPO_ROOT"
 LOCK_DIR="$REPO_ROOT/.factory-cache/locks"
 SNAP_DIR="$REPO_ROOT/.factory-cache/snapshots"
 
+# caveman: untracked files a round left that nobody asked for - helper
+# scripts, scratch patches. not in that round's snapshot, not under the
+# factory's own dirs, not listed in Files to touch.
+stray_of() { # stray_of <log> <handoff>
+  local before listed p l hit
+  before="$(sed -n 's/^snapshot:  *//p' "$1" | head -n 1)"
+  case "$before" in
+    ""|none) before="" ;;
+    *) before="$(tar tzf "$before" 2>/dev/null || true)" ;;
+  esac
+  listed="$(awk '/^## Files to touch/ { f = 1; next } /^## / { f = 0 } f' "$2" |
+    sed -n 's/^[-*] *`\([^`]*\)`.*/\1/p')"
+  git ls-files -o --exclude-standard 2>/dev/null |
+    grep -vE '^(specs|handoffs|factory|\.factory-cache)/' |
+    while IFS= read -r p; do
+      printf '%s\n' "$before" | grep -qxF "$p" && continue
+      hit=0
+      while IFS= read -r l; do
+        [ -n "$l" ] || continue
+        case "$p" in "$l"|"${l%/}"/*) hit=1; break ;; esac
+      done <<EOF
+$listed
+EOF
+      [ "$hit" -eq 1 ] || printf '%s\n' "$p"
+    done || true
+}
+
 state_of() { # state_of <slug>; sets the globals below
   SL="$1"
   HANDOFF="$(factory_newest_handoff "$SL")"
@@ -76,9 +103,12 @@ state_of() { # state_of <slug>; sets the globals below
     [ -n "$LAST_STATUS" ] || LAST_STATUS="none"
   fi
 
-  MODEL=""; EXITCODE=""; LOG_STATE="none"
+  MODEL=""; EXITCODE=""; LOG_STATE="none"; STRAY=""
   if [ -n "$LAST_LOG" ]; then
     MODEL="$(sed -n 's/^=== model used: \(.*\) ===/\1/p' "$LAST_LOG" | tail -n 1)"
+    # caveman: a fallback is a dead model, not a detail. say what was asked for.
+    REQ="$(sed -n 's/^=== model requested: \(.*\) -> used: .* ===/\1/p' "$LAST_LOG" | tail -n 1)"
+    [ -z "$REQ" ] || MODEL="$MODEL (requested $REQ)"
     EXITCODE="$(sed -n 's/^=== agy exit code: \([0-9]*\) ===/\1/p' "$LAST_LOG" | tail -n 1)"
     if [ -z "$EXITCODE" ]; then
       LOG_STATE="killed mid-round (no exit footer)"
@@ -110,6 +140,10 @@ state_of() { # state_of <slug>; sets the globals below
   fi
 
   SNAP="$(factory_newest "$SNAP_DIR/*-$SL.tar.gz")"
+
+  if [ -n "$LAST_LOG" ] && [ -n "$HANDOFF" ]; then
+    STRAY="$(stray_of "$LAST_LOG" "$HANDOFF" | tr '\n' ' ' | sed 's/ $//')"
+  fi
 
   # caveman: the state machine. rounds and checks both come off the disk, so a
   # fresh agent counts the same round cap a dead one was counting.
@@ -149,6 +183,7 @@ report_one() { # report_one <slug>
   printf 'log_state:    %s\n' "$LOG_STATE"
   printf 'last_model:   %s\n' "${MODEL:-none}"
   printf 'agy_exit:     %s\n' "${EXITCODE:-none}"
+  printf 'stray:        %s\n' "${STRAY:-none}"
   printf 'last_status:  %s\n' "$LAST_STATUS"
   printf 'last_tests:   %s\n' "${LAST_TESTS:-none}"
   printf 'tree:         %s file(s) changed since HEAD\n' \

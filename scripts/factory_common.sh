@@ -57,6 +57,7 @@ factory_load_env() { # factory_load_env <repo_root>
   AGY_TIMEOUT="${AGY_TIMEOUT:-30m}"
   AGY_FALLBACKS="${AGY_FALLBACKS:-2}"
   MODELS_TTL_MIN="${MODELS_TTL_MIN:-720}"
+  FACTORY_UPSTREAM="${FACTORY_UPSTREAM:-}"
   # shellcheck source=/dev/null
   [ -f "$1/factory.env" ] && . "$1/factory.env"
   return 0

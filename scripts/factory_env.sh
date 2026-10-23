@@ -72,6 +72,25 @@ else
   printf 'engine_edit: forbidden - vendored, changes die at the next update (PRINCIPLES #9)\n'
 fi
 
+# caveman: where /factory-reflect forwards its proposals. the shared inbox is
+# the harness checkout's own factory/improvements.md - knowledge, not engine,
+# so writing there breaks no vendoring rule. never the vendored copy itself.
+if [ "$MODE" = "self" ]; then
+  UPSTREAM="self - proposals already land in this repo's factory/improvements.md"
+elif [ -z "$FACTORY_UPSTREAM" ]; then
+  UPSTREAM="unset - set FACTORY_UPSTREAM to a local ai-factory checkout to forward proposals"
+elif [ -f "$FACTORY_UPSTREAM/PRINCIPLES.md" ] && [ -d "$FACTORY_UPSTREAM/factory" ]; then
+  UP="$(cd "$FACTORY_UPSTREAM" && pwd -P)"
+  if [ "$UP" = "$ENGINE" ]; then
+    UPSTREAM="invalid - $FACTORY_UPSTREAM is the vendored engine. point at a separate checkout"
+  else
+    UPSTREAM="$UP/factory/improvements.md"
+  fi
+else
+  UPSTREAM="invalid - $FACTORY_UPSTREAM is not an ai-factory checkout"
+fi
+printf 'upstream:    %s\n' "$UPSTREAM"
+
 [ "$PATHS_ONLY" -eq 0 ] || exit 0
 
 echo

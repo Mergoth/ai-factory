@@ -92,9 +92,18 @@ for a in "$@"; do
   case "$prev" in --add-dir) repo="$a" ;; --model) model="$a" ;; esac
   prev="$a"
 done
+case "$2" in *"stopped mid-run"*) echo "saw: continue-note" ;; esac
 if [ -n "${FAKE_FAIL_MODEL:-}" ] && [ "$model" = "$FAKE_FAIL_MODEL" ]; then
   echo "boom: $model is unavailable"; exit 1
 fi
+if [ -n "${FAKE_DIRTY_FAIL_MODEL:-}" ] && [ "$model" = "$FAKE_DIRTY_FAIL_MODEL" ]; then
+  echo "half" > "$repo/half.txt"; echo "boom: died mid-edit"; exit 1
+fi
+if [ -n "${FAKE_QUOTA_MODEL:-}" ] && [ "$model" = "$FAKE_QUOTA_MODEL" ]; then
+  echo "RESOURCE_EXHAUSTED (code 429)"; exit 3
+fi
+[ -z "${FAKE_STRAY:-}" ] || echo "x" > "$repo/patch.py"
+[ -z "${FAKE_DETACH:-}" ] || git -C "$repo/sub" checkout -q --detach
 case "${FAKE_MODE:-ok}" in
   allfail)
     echo "boom: everything is down"; exit 1 ;;
@@ -115,6 +124,7 @@ case "${FAKE_MODE:-ok}" in
     echo "WALKTHROUGH:"
     echo "  how it works: src/app.py prints"
     echo "  verify by hand: python src/app.py"
+    echo "  outside the contract: none"
     exit 0 ;;
 esac
 FAKE
@@ -538,6 +548,106 @@ if [ "$GROUP_ON" = 1 ]; then
   t "and the runner still starts the next round"
   run "$R" bash scripts/run_antigravity.sh feat
   rc_is 0
+fi
+
+# --------------------------------------------- upstream sweep 2026-10
+# caveman: one case per rule carried up from consumer improvements.md files.
+group "upstream sweep"
+if [ "$GROUP_ON" = 1 ]; then
+  R="$(new_repo sweep)"
+
+  t "TEST_CMD left at the example default is an error"
+  printf 'TEST_CMD="pytest -q"\n' > "$R/factory.env"
+  run "$R" bash scripts/factory_lint.sh feat --contract
+  rc_not 0
+  t "and says so"
+  has "untouched example default"
+  t "a commented example is a choice, not a default"
+  printf 'TEST_CMD="go test ./..."\n' > "$R/factory.env"
+  run "$R" bash scripts/factory_lint.sh feat --contract
+  lacks "untouched example default"
+  printf 'TEST_CMD="true"\nMAX_ROUNDS="2"\n' > "$R/factory.env"
+
+  t "a diff criterion over the whole tree is a warning"
+  printf -- '- [ ] `git diff --quiet -- . ":!sub"` is clean\n' >> "$R/handoffs/20260816T090000Z-feat.md"
+  run "$R" bash scripts/factory_lint.sh feat --contract
+  has "whole tree"
+  t "but not an error"
+  rc_is 0
+  write_handoff "$R" feat
+  t "a scoped one is fine"
+  printf -- '- [ ] `git status --porcelain -- src/` lists only src/app.py\n' >> "$R/handoffs/20260816T090000Z-feat.md"
+  run "$R" bash scripts/factory_lint.sh feat --contract
+  lacks "whole tree"
+  write_handoff "$R" feat
+
+  t "the prompt asks for unlisted edits"
+  run "$R" bash scripts/run_antigravity.sh feat --dry-run
+  has "outside the contract:"
+  t "a walkthrough without that line is a warning"
+  printf 'RESULT: PASS\nWALKTHROUGH:\n  how it works: x\n=== agy exit code: 0 ===\n' \
+    > "$R/handoffs/logs-20260816T100000Z-feat.txt"
+  run "$R" bash scripts/factory_lint.sh feat
+  has "outside the contract"
+  rm -f "$R"/handoffs/logs-*.txt
+
+  t "a clean round leaves no stray files"
+  run "$R" bash scripts/run_antigravity.sh feat
+  run "$R" bash scripts/factory_state.sh feat
+  has "stray:        none"
+  t "a helper the builder left behind is stray"
+  run "$R" env FAKE_STRAY=1 bash scripts/run_antigravity.sh feat
+  run "$R" bash scripts/factory_state.sh feat
+  has "stray:        patch.py"
+  t "but a listed file is not"
+  lacks "src/app.py"
+
+  R2="$(new_repo sweep2)"
+  t "a fallback after a clean failure gets the plain prompt"
+  run "$R2" env FAKE_FAIL_MODEL=model-a bash scripts/run_antigravity.sh feat
+  lacks "saw: continue-note"
+  t "the substitution is named, with the exit code"
+  has "model requested: model-a (exit 1)"
+  t "and the state shows it"
+  run "$R2" bash scripts/factory_state.sh feat
+  has "(requested model-a (exit 1))"
+  t "a fallback after a half-edited tree is told to continue"
+  run "$R2" env FAKE_DIRTY_FAIL_MODEL=model-a bash scripts/run_antigravity.sh feat
+  has "saw: continue-note"
+
+  R3="$(new_repo sweep3)"
+  t "a quota failure falls back"
+  run "$R3" env FAKE_QUOTA_MODEL=model-a bash scripts/run_antigravity.sh feat --model model-a
+  has "model used: model-b"
+  t "and the next round skips that family first"
+  run "$R3" bash scripts/run_antigravity.sh feat --model model-a
+  has "hit its quota"
+  t "starting with the fallback"
+  has "model used: model-b"
+
+  t "a round that detaches a submodule is called out"
+  R4="$(new_repo sweep4)"
+  SUBSRC="$WORK/subsrc"
+  mkdir -p "$SUBSRC" && ( cd "$SUBSRC" && git init -q . && git config user.email t@example.com &&
+    git config user.name t && echo s > s.txt && git add -A && git commit -qm s >/dev/null 2>&1 )
+  ( cd "$R4" && git -c protocol.file.allow=always submodule add -q "$SUBSRC" sub >/dev/null 2>&1 &&
+    git commit -qm sub >/dev/null 2>&1 && git -C sub checkout -q -B work )
+  run "$R4" env FAKE_DETACH=1 bash scripts/run_antigravity.sh feat
+  has "moved a submodule's branch"
+  t "and the log records it"
+  run "$R4" grep -q '^=== submodule branch changed: sub work -> HEAD ===' "$(ls -1 "$R4"/handoffs/logs-*-feat.txt | tail -n 1)"
+  rc_is 0
+
+  t "reflect's inbox is off until FACTORY_UPSTREAM is set"
+  run "$R" bash scripts/factory_env.sh
+  has "upstream:    unset"
+  t "the vendored engine is refused as an inbox"
+  run "$R" env FACTORY_UPSTREAM="$ENGINE" bash scripts/factory_env.sh
+  has "upstream:    invalid"
+  t "a separate checkout is accepted"
+  UPC="$WORK/upstream-checkout"; mkdir -p "$UPC/factory" && touch "$UPC/PRINCIPLES.md"
+  run "$R" env FACTORY_UPSTREAM="$UPC" bash scripts/factory_env.sh
+  has "upstream:    $UPC/factory/improvements.md"
 fi
 
 # ---------------------------------------------------------- state machine

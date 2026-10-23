@@ -8,6 +8,9 @@ This file is a queue, not a changelog. Nothing here is applied - `factory-engine
 is vendored and never edited from a project (PRINCIPLES #9). Carrying an entry
 upstream is a human action: a PR against the harness repo.
 
+In this repo the file is also the shared inbox: projects with FACTORY_UPSTREAM
+pointing here append their `/factory-reflect` blocks, headed `<project> / <slug>`.
+
 Rules for whoever writes here:
 - Target names a real engine file: a skill, a template, a persona, the runner,
   or PRINCIPLES.md. "somewhere in the prompt" is not a target.

@@ -6,7 +6,8 @@ appends here after every full run. oldest at top, newest at the bottom.
 
 This file is a queue, not a changelog. Nothing here is applied - `factory-engine/`
 is vendored and never edited from a project (PRINCIPLES #9). Carrying an entry
-upstream is a human action: a PR against the harness repo.
+upstream is a human action: a PR against the harness repo. With FACTORY_UPSTREAM
+set, `/factory-reflect` also copies each block to the harness checkout's inbox.
 
 Rules for whoever writes here:
 - Target names a real engine file: a skill, a template, a persona, the runner,

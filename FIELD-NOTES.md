@@ -234,3 +234,31 @@ Worth recording so it does not get refactored away:
   there was contract scope, not model capability, and no cheaper model would have done better.
 - **The status-block-append pattern.** Reading three `## Check` blocks in one handoff is a genuine
   history of what was tried, and it is what made the "test count unchanged" comparison possible.
+
+## 8. Held - do not remove (upstream sweep, 2026-10-23)
+
+caveman: consumer `factory/improvements.md` files said these worked. Whoever trims a
+skill: these stay. Source: unibot runs (bootstrap-minutos-utiles … toolcontext-identity)
+and minutos-utiles-134 runs (multi-enrollment-billing … admin-ui-hosting).
+
+- **PRINCIPLES #10, no side effects past the repo** - held twice: kept `gcloud` out of an
+  unattended round, and stopped a `firebase deploy` that would have overwritten live prod.
+- **factory-spec greenfield bootstrap rule** - turned a big infra task into a cheap
+  `mechanical` round that passed first time.
+- **factory-spec preflight runs `TEST_CMD`** - found broken pyenv shims and an empty venv
+  before round 1 was paid for.
+- **factory-build: step up a tier after a correctness failure** - the pro round fixed what
+  two flash rounds could not; a third flash round would have burned the cap.
+- **factory-check step 7, files the handoff did not list** - caught an unrelated test edit
+  and got it reverted.
+- **factory-check steps 3-5, reading the diff beyond a green suite** - caught mixed policy
+  and ignored kwargs at 110 green.
+- **Environment limits naming the uncheckable** - builders listed live eval, deploy and
+  smoke under "not covered" instead of claiming them.
+- **Naming the silent-regression consumer in the contract** - a migration that would have
+  no-opped behind a warning log got a real test.
+- **Splitting one review into slugs by risk** - kept each handoff ~50 lines, and the cheap
+  and tricky work on different model tiers.
+- **"never run git checkout/restore/stash/reset/submodule update" in a parent+submodule
+  handoff's Environment limits** - the submodule branch with an unpushed commit stayed put
+  for four rounds. The runner now also warns when a round moves a submodule branch.

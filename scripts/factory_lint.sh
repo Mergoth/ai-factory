@@ -88,6 +88,14 @@ lint_brain() {
   done
   if [ -f factory.env ]; then
     [ -n "$TEST_CMD" ] || err "factory.env: TEST_CMD is empty"
+    # caveman: the copied default is the costliest unedited line there is - it
+    # runs the wrong suite for a whole paid round. only the uncommented example
+    # counts: picking a commented one is a choice, leaving this one is not.
+    local example
+    example="$(sed -n 's/^TEST_CMD="\(.*\)"$/\1/p' "$FACTORY_ENGINE/factory.env.example" | head -n 1)"
+    if [ -n "$example" ] && [ "$TEST_CMD" = "$example" ]; then
+      err "factory.env: TEST_CMD is still the untouched example default ($example) - set the real test command for this repo (if it really is right, spell it out, e.g. python -m pytest -q)"
+    fi
   else
     err "factory.env: missing. copy factory-engine/factory.env.example to factory.env"
   fi
@@ -144,6 +152,17 @@ lint_handoff() { # lint_handoff <path>
     [ -e "$p" ] || printf 'warn   %s: lists `%s`, which does not exist and is not marked NEW\n' "$f" "$p" >> "$FINDINGS"
   done
 
+  # caveman: a diff criterion over the whole tree always fails - Claude's own
+  # preflight edits to factory.env, factory/ and specs/ are already in it.
+  section "$f" "## Done criteria" |
+    grep -E '^- \[[ xX]\] .*git .*(diff --quiet|diff --exit-code|status --porcelain|status --short)' |
+    while IFS= read -r line; do
+      local ps
+      ps="${line#* -- }"; [ "$ps" = "$line" ] && ps=""
+      ps="$(printf '%s' "${ps%% *}" | tr -d "\`'\"")"
+      case "$ps" in ""|.|./) warn "$f: a done criterion checks the diff over the whole tree. scope it to the builder's paths: -- <paths>" ;; esac
+    done || true
+
   # caveman: check blocks are the run history. a malformed one loses a round.
   awk -v f="$f" '
     function flush() {
@@ -187,6 +206,9 @@ lint_logs() { # lint_logs <slug>
     err "$newest: no RESULT: block. the run was truncated, whatever the exit code said"
   grep -q 'WALKTHROUGH:' "$newest" ||
     warn "$newest: no WALKTHROUGH: block. nothing to check the diff against"
+  if grep -q 'WALKTHROUGH:' "$newest" && ! grep -q 'outside the contract:' "$newest"; then
+    warn "$newest: walkthrough has no 'outside the contract:' line. unlisted edits are unexplained"
+  fi
 
   local code
   code="$(sed -n 's/^=== agy exit code: \([0-9]*\) ===/\1/p' "$newest" | tail -n 1)"
