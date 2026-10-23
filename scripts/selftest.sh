@@ -218,7 +218,7 @@ if [ "$GROUP_ON" = 1 ]; then
   counts "$R/.claude/skills/factory-*" 5
 
   t "links the shared scripts"
-  counts "$R/scripts/factory_*.sh" 4
+  counts "$R/scripts/factory_*.sh" 5
   t "links the runner"
   exists "$R/scripts/run_antigravity.sh"
 
@@ -379,6 +379,116 @@ if [ "$GROUP_ON" = 1 ]; then
   lacks "new setting:"
 
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+fi
+
+# ---------------------------------------------------------------- version
+group "version"
+if [ "$GROUP_ON" = 1 ]; then
+  t "VERSION is X.Y.Z"
+  run "$ENGINE" grep -qxE '[0-9]+\.[0-9]+\.[0-9]+' VERSION
+  rc_is 0
+  t "and the newest CHANGELOG entry is that version"
+  is "$(sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' "$ENGINE/CHANGELOG.md" | head -1)" "$(cat "$ENGINE/VERSION")"
+
+  t "versions compare as numbers, not as strings"
+  is "$(. "$ENGINE/scripts/factory_common.sh"; factory_ver_cmp 1.10.0 1.9.0)" "1"
+
+  # caveman: a released upstream, tagged the way a release is tagged.
+  VU="$WORK/vupstream"
+  mkdir -p "$VU"
+  ( cd "$ENGINE" && tar cf - --exclude .git --exclude .factory-cache . ) | ( cd "$VU" && tar xf - )
+  rm -f "$VU/factory/installed.txt"
+  ( cd "$VU" && printf '1.0.0\n' > VERSION && git init -q . && git config user.email t@example.com &&
+    git config user.name t && git add -A && git commit -qm base >/dev/null 2>&1 && git tag v1.0.0 )
+  release() { # release <version> <note>  - VERSION, changelog entry, tag
+    ( cd "$VU" && printf '%s\n' "$1" > VERSION &&
+      { sed -n '1,/^## /p' CHANGELOG.md | sed '$d'; printf '## %s - 2026-01-01\n\n- %s\n\n' "$1" "$2";
+        sed -n '/^## /,$p' CHANGELOG.md; } > CHANGELOG.md.new && mv CHANGELOG.md.new CHANGELOG.md &&
+      git commit -qam "release $1" && git tag "v$1" )
+  }
+  VC="$WORK/vengine"
+  git clone -q "$VU" "$VC"
+  V="$WORK/versioned"
+  mkdir -p "$V"
+  ( cd "$V" && git init -q . && git config user.email t@example.com && git config user.name t )
+  bash "$VC/install.sh" "$V" >/dev/null 2>&1
+
+  t "install records the version in the manifest"
+  run "$V" grep -qxF "version: 1.0.0" factory/installed.txt
+  rc_is 0
+  t "the version script is linked into the project"
+  [ -L "$V/scripts/factory_version.sh" ] && ok || bad "scripts/factory_version.sh is not a link"
+
+  t "on the newest release -> up to date"
+  run "$V" bash scripts/factory_version.sh
+  rc_is 0
+  has "status:      up to date"
+  t "and names all three numbers"
+  has "latest:      1.0.0"
+
+  release 1.1.0 "a shiny new check"
+  t "a cached answer does not ask upstream again"
+  run "$V" bash scripts/factory_version.sh
+  has "up to date"
+  t "--refresh does, and finds the minor release"
+  run "$V" bash scripts/factory_version.sh --refresh
+  has "update available - v1.1.0"
+  t "with the command that takes it"
+  has "install.sh --update"
+  t "--short prints the status line only"
+  run "$V" bash scripts/factory_version.sh --short
+  is "$(printf '%s\n' "$LAST_OUT" | wc -l | tr -d ' ')" "1"
+
+  t "--update prints the version move"
+  run "$V" bash "$VC/install.sh" --update
+  has "version: 1.0.0 -> 1.1.0"
+  t "and the changelog entry that came in"
+  has "a shiny new check"
+  t "but not the entries it already had"
+  lacks "## 1.0.0"
+  t "and records the new version"
+  run "$V" grep -qxF "version: 1.1.0" factory/installed.txt
+  rc_is 0
+
+  release 2.0.0 "a breaking change"
+  t "a newer major release -> update required"
+  run "$V" bash scripts/factory_version.sh --refresh
+  has "update required - v2.0.0"
+  t "pointing at the changelog"
+  has "CHANGELOG.md"
+
+  t "an engine moved without install.sh -> re-run install"
+  ( cd "$VC" && git pull -q --ff-only )
+  run "$V" bash scripts/factory_version.sh
+  has "re-run install"
+
+  t "an unreachable upstream -> the last answer, said so"
+  ( cd "$VC" && git remote set-url origin "$WORK/nowhere" )
+  run "$V" bash scripts/factory_version.sh --refresh
+  rc_is 0
+  has "using the last answer"
+  t "and with no answer at all -> unknown, still exit 0"
+  rm -f "$V/.factory-cache/latest-version.txt"
+  bash "$VC/install.sh" "$V" --update --no-pull >/dev/null 2>&1
+  run "$V" bash scripts/factory_version.sh
+  rc_is 0
+  has "status:      unknown"
+
+  t "a copy install still knows what it has"
+  VK="$WORK/vcopied"
+  mkdir -p "$VK"
+  ( cd "$VK" && git init -q . )
+  bash "$VC/install.sh" "$VK" --copy >/dev/null 2>&1
+  run "$VK" bash scripts/factory_version.sh
+  has "installed:   2.0.0"
+  t "and does not pretend to be the engine"
+  has "copy install"
+  lacks "mode:        self"
+
+  t "in the engine, a VERSION with no tag -> unreleased"
+  ( cd "$VC" && git remote set-url origin "$VU" && printf '2.1.0\n' > VERSION )
+  run "$VC" bash scripts/factory_version.sh --refresh
+  has "unreleased - VERSION 2.1.0 has no tag yet"
 fi
 
 # ------------------------------------------------------ self-development
