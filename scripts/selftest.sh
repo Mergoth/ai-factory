@@ -36,6 +36,9 @@ while [ $# -gt 0 ]; do
 done
 
 ENGINE="$(cd "$(dirname "$0")/.." && pwd)"
+# caveman: FACTORY_UPSTREAM lives in shell profiles by design. inherited, it
+# points every sandbox at the real inbox - cases that want it set it themselves.
+unset FACTORY_UPSTREAM
 # caveman: resolve the sandbox path the same way git does - through symlinks and
 # without double slashes - or every assertion about a path in the prompt misses.
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/factory-selftest.XXXXXX")" && pwd -P)"
@@ -236,6 +239,139 @@ if [ "$GROUP_ON" = 1 ]; then
   run "$R" grep -qxF 'TEST_CMD="mine"' factory.env
   rc_is 0
 
+  t "install writes the manifest"
+  run "$R" grep -qxF "path: .claude/skills/factory-check" factory/installed.txt
+  rc_is 0
+fi
+
+# ----------------------------------------------------------------- update
+group "update"
+if [ "$GROUP_ON" = 1 ]; then
+  # caveman: an upstream engine to pull from, built from the working tree like
+  # self mode. file:// submodules are refused by default since git 2.38, so
+  # allow them for this group only, through the environment, not global config.
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=protocol.file.allow GIT_CONFIG_VALUE_0=always
+  U="$WORK/upstream"
+  mkdir -p "$U"
+  ( cd "$ENGINE" && tar cf - --exclude .git --exclude .factory-cache . ) | ( cd "$U" && tar xf - )
+  rm -f "$U/factory/installed.txt"
+  ( cd "$U" && git init -q . && git config user.email t@example.com &&
+    git config user.name t && git add -A && git commit -qm base >/dev/null 2>&1 )
+
+  upstream_commit() { # upstream_commit <msg>  - one more commit upstream
+    ( cd "$U" && echo "$1" >> skills/factory-spec/SKILL.md && git add -A && git commit -qm "$1" )
+  }
+  plain_repo() { # plain_repo <name> -> empty git repo, nothing installed
+    local d="$WORK/$1"
+    mkdir -p "$d"
+    ( cd "$d" && git init -q . && git config user.email t@example.com && git config user.name t )
+    echo "$d"
+  }
+
+  # -- engine as a clone outside the repo
+  C="$WORK/engine-clone"
+  git clone -q "$U" "$C"
+  ( cd "$C" && git config user.email t@example.com && git config user.name t )
+  O="$(plain_repo outside)"
+  bash "$C/install.sh" "$O" >/dev/null 2>&1
+
+  # caveman: upstream adds a skill and drops a script - the two things a plain
+  # re-run of the old install.sh could never get right.
+  ( cd "$U" && mkdir -p skills/factory-new && echo "# new" > skills/factory-new/SKILL.md &&
+    awk '/install_one "skills\/factory-reflect"/ { print; print "install_one \"skills/factory-new\" \".claude/skills/factory-new\""; next }
+         /install_one "scripts\/factory_state.sh"/ { next } { print }' install.sh > install.sh.new &&
+    mv install.sh.new install.sh && git add -A && git commit -qm "add factory-new, drop state" )
+  upstream_commit "tweak the spec skill"
+
+  t "--update pulls a cloned engine"
+  run "$O" bash "$C/install.sh" --update
+  rc_is 0
+  t "to the upstream head"
+  is "$(git -C "$C" rev-parse HEAD)" "$(git -C "$U" rev-parse HEAD)"
+  t "and lists the commits that came in"
+  has "tweak the spec skill"
+  t "with a count"
+  has "2 new commit(s)"
+  t "links the skill upstream added, using the NEW install.sh"
+  [ -L "$O/.claude/skills/factory-new" ] && ok || bad "factory-new was not linked" "$LAST_OUT"
+  t "prunes the script upstream dropped"
+  absent "$O/scripts/factory_state.sh"
+  t "and says so"
+  has "prune scripts/factory_state.sh"
+  t "keeps the rest"
+  exists "$O/scripts/factory_lint.sh"
+  t "records the new engine in the manifest"
+  run "$O" grep -qxF "engine: $(git -C "$U" rev-parse HEAD)" factory/installed.txt
+  rc_is 0
+
+  t "a second --update is a no-op"
+  run "$O" bash "$C/install.sh" --update
+  has "already up to date"
+
+  t "a diverged engine fails loudly"
+  ( cd "$C" && echo local >> README.md && git commit -qam "local edit" )
+  upstream_commit "upstream edit"
+  run "$O" bash "$C/install.sh" --update
+  rc_not 0
+  t "and says nothing was changed"
+  has "nothing was changed"
+  ( cd "$C" && git reset -q --hard origin/HEAD )
+
+  # -- engine as a submodule, the documented install
+  M="$(plain_repo submod)"
+  ( cd "$M" && git submodule add -q "$U" factory-engine >/dev/null 2>&1 &&
+    bash factory-engine/install.sh >/dev/null 2>&1 && git add -A && git commit -qm init >/dev/null 2>&1 )
+  upstream_commit "submodule news"
+
+  t "--update moves a submodule engine"
+  run "$M" bash factory-engine/install.sh --update
+  rc_is 0
+  t "to the upstream head"
+  is "$(git -C "$M/factory-engine" rev-parse HEAD)" "$(git -C "$U" rev-parse HEAD)"
+  t "and shows the commit"
+  has "submodule news"
+  t "links stay relative to the submodule"
+  is "$(readlink "$M/.claude/skills/factory-check")" "../../factory-engine/skills/factory-check"
+
+  # -- copy mode
+  K="$(plain_repo copied)"
+  bash "$C/install.sh" "$K" --copy >/dev/null 2>&1
+  ( cd "$C" && git pull -q --ff-only )
+  upstream_commit "copy marker"
+
+  t "a plain --copy re-run does NOT refresh the copies"
+  run "$K" bash "$C/install.sh" --copy
+  has "skip  .claude/skills/factory-spec"
+
+  t "--update remembers copy mode and refreshes the copies"
+  run "$K" bash "$C/install.sh" --update
+  rc_is 0
+  run "$K" grep -q "copy marker" .claude/skills/factory-spec/SKILL.md
+  rc_is 0
+  t "which stay real files"
+  [ -L "$K/.claude/skills/factory-spec" ] && bad "copy became a symlink" || ok
+
+  # -- installs from before the manifest existed
+  P="$(new_repo legacy)"
+  rm -f "$P/factory/installed.txt"
+  ln -s "$(cd "$ENGINE" && pwd -P)/skills/factory-gone" "$P/.claude/skills/factory-gone"
+  ln -s "/nowhere/factory-mine" "$P/.claude/skills/factory-mine"
+
+  t "--no-pull still relinks"
+  run "$P" bash "$ENGINE/install.sh" --update --no-pull
+  rc_is 0
+  lacks "pull:"
+  t "prunes a dangling link into the engine"
+  [ -L "$P/.claude/skills/factory-gone" ] && bad "factory-gone survived" "$LAST_OUT" || ok
+  t "but leaves a dangling link that is not the engine's"
+  [ -L "$P/.claude/skills/factory-mine" ] && ok || bad "factory-mine was removed" "$LAST_OUT"
+  t "and writes the manifest it was missing"
+  exists "$P/factory/installed.txt"
+
+  t "names settings the project's factory.env does not mention"
+  has "new setting: AGY_TIMEOUT"
+
+  unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 fi
 
 # ------------------------------------------------------ self-development
@@ -290,6 +426,13 @@ if [ "$GROUP_ON" = 1 ]; then
   rc_is 0
   t "and is still self mode"
   has "self-development"
+
+  t "--update in self mode skips the pull"
+  run "$S" bash ./install.sh . --update
+  rc_is 0
+  has "skip  pull"
+  t "and leaves the real scripts alone"
+  [ -L "$S/scripts/factory_lint.sh" ] && bad "scripts/factory_lint.sh became a symlink" || ok
 
   t "project mode reports the vendored engine instead"
   P="$(new_repo projectmode)"

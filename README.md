@@ -144,6 +144,7 @@ your-project/
     improvements.md               #   proposals to improve the factory itself
     personas/                     #   extra lenses, empty by default
     prompt-extra.md               #   raw orders for the builder
+    installed.txt                 #   what the engine owns here, for --update
   specs/                          # feature specs
   handoffs/                       # contracts + logs
   .factory-cache/                 # gitignored: model list, locks, snapshots
@@ -155,11 +156,38 @@ Two directories, and the split is the whole idea:
   Never edit it; your changes would be blown away and belong upstream anyway.
 - **`factory/`** — your project's own knowledge. Seeded once, then yours forever.
 
-Symlinks mean improvements to the harness reach every project with
-`git submodule update --remote factory-engine`. Nothing is copied, so nothing
-drifts.
-On a filesystem without symlinks, use `bash factory-engine/install.sh --copy` and
-re-run it after each update.
+`install.sh` also writes `factory/installed.txt`: the install mode, the engine
+commit, and every path the engine owns in this repo. Commit it — it is what
+lets an update tell engine files from yours.
+
+### Updating
+
+One command, from the project root:
+
+```bash
+bash factory-engine/install.sh --update
+```
+
+It pulls the engine (`git submodule update --remote` for a submodule,
+`git pull --ff-only` for a clone that lives elsewhere), then hands over to the
+**new** `install.sh`, so a skill added upstream gets linked. It refreshes copies
+in `--copy` installs, prunes links and copies that upstream dropped, and prints
+the engine commits that came in, plus any template or `factory.env` setting
+that changed. Your `factory/`, `factory.env`, specs and handoffs are never
+touched. Afterwards, `git status` and commit the submodule pointer and
+`factory/installed.txt` together.
+
+- `--update --no-pull` — you already moved the engine; just re-link and prune.
+- A diverged or dirty engine stops the update before anything changes.
+- A plain re-run of `install.sh` is **not** an update: it keeps the old engine,
+  and in a `--copy` install it skips every file that is already there.
+- Installs from before `--update` existed: move the engine once by hand
+  (`git submodule update --remote factory-engine`), then run `--update`. Stale
+  links into the engine are found without the manifest.
+
+Symlinks mean nothing is copied, so nothing drifts between updates. On a
+filesystem without symlinks, use `bash factory-engine/install.sh --copy`;
+`--update` remembers that mode.
 
 Ad-hoc target, no install: from the target repo root run
 `bash <engine>/scripts/run_antigravity.sh <slug>`. The repo root is the cwd's git
@@ -629,7 +657,7 @@ And the harness has its own test suite, which needs no `agy`, no network and no
 money:
 
 ```bash
-bash scripts/selftest.sh          # ~20 seconds, 109 cases
+bash scripts/selftest.sh          # ~25 seconds, 139 cases
 bash scripts/selftest.sh --only lock
 bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
 ```
@@ -637,7 +665,7 @@ bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
 It builds throwaway git repos under `$TMPDIR`, installs this harness into them,
 puts a **fake `agy`** on `PATH` — one that can succeed, fail on a given model,
 or die mid-sentence — and drives the real scripts against them. It covers
-install and re-install, the runner's preflight gates, the template-marker rule,
+install, re-install and `--update` (clone, submodule, copy), the runner's preflight gates, the template-marker rule,
 locks and stale locks, snapshot capture and restore, the round counter, model
 fallback, every lint rule, and all seven states of the resume machine.
 
@@ -667,7 +695,7 @@ for, and it costs nothing but a read-only subagent.
 
 ```
 PRINCIPLES.md                  # the rules every skill obeys
-install.sh                     # symlink harness into a target repo
+install.sh                     # symlink harness into a target repo; --update
 skills/factory-think/SKILL.md  # Claude: run personas, write brief
 skills/factory-spec/SKILL.md   # Claude: write spec + handoff
 skills/factory-build/SKILL.md  # Claude: drive agy, loop, verify
