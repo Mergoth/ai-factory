@@ -292,11 +292,69 @@ fi
 # caveman: every new Claude session here checks the engine version before it
 # does anything else. settings.json is the project's own file - merge the hook
 # in, never replace the file, and leave it alone if it cannot be read.
-HOOK_CMD='bash "$CLAUDE_PROJECT_DIR/scripts/factory_session_start.sh"'
+# the root comes from git, not $CLAUDE_PROJECT_DIR: in a git worktree that one
+# can be the main checkout. and `git worktree add` never inits submodules, so a
+# fresh worktree has an empty engine dir and every link into it dangles - the
+# hook inits it first and tells the session script, which asks Claude to
+# re-scan the skills that just appeared. copies have nothing to init.
+HOOK_ROOT='R="$(git rev-parse --show-toplevel 2>/dev/null || echo "$CLAUDE_PROJECT_DIR")"; '
+HOOK_RUN='bash "$R/scripts/factory_session_start.sh"'
+HOOK_CMD="$HOOK_ROOT$HOOK_RUN"
+case "$MODE:$FACTORY_REL" in
+  copy:*|*:|*:.) ;;
+  *) HOOK_CMD="${HOOK_ROOT}I=0; [ -e \"\$R/$FACTORY_REL/VERSION\" ] || { git -C \"\$R\" submodule update --init --recursive --quiet >&2 && I=1; }; FACTORY_ENGINE_INITED=\$I $HOOK_RUN" ;;
+esac
+HOOK_TIMEOUT=120
 SETTINGS="$REPO_ROOT/.claude/settings.json"
+
+# caveman: rewrite every SessionStart command that runs the session script -
+# the plain 1.0.0 one or a hand-edited one - in place, so it is never doubled.
+# prints the whole settings, key order kept, so before and after compare as text.
+hook_rewrite() { # hook_rewrite <settings> [migrate]
+  if command -v jq >/dev/null 2>&1; then
+    if [ -n "${2:-}" ]; then
+      jq --arg cmd "$HOOK_CMD" --argjson to "$HOOK_TIMEOUT" '
+        def arr(f): if type == "array" then map(f) else . end;
+        if (.hooks.SessionStart | type) == "array" then
+          .hooks.SessionStart |= arr(if (.hooks | type) == "array" then .hooks |= arr(
+            if ((.command // "") | tostring | contains("factory_session_start.sh"))
+            then .command = $cmd | .timeout = $to else . end) else . end)
+        else . end' "$1"
+    else
+      jq . "$1"
+    fi
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import json, sys
+s = json.load(open(sys.argv[1]))
+if len(sys.argv) > 4:
+    for entry in s.get("hooks", {}).get("SessionStart", []):
+        for h in entry.get("hooks", []):
+            if "factory_session_start.sh" in h.get("command", ""):
+                h["command"] = sys.argv[2]; h["timeout"] = int(sys.argv[3])
+print(json.dumps(s, indent=2))' "$1" "$HOOK_CMD" "$HOOK_TIMEOUT" ${2:+migrate}
+  else
+    return 1
+  fi
+}
+
 install_hook() {
   if [ -f "$SETTINGS" ] && grep -qF "factory_session_start.sh" "$SETTINGS"; then
-    [ "$UPDATE" -eq 1 ] || echo "  keep  .claude/settings.json (version hook already there)"
+    if [ "$UPDATE" -eq 0 ]; then
+      echo "  keep  .claude/settings.json (version hook already there)"
+      return 0
+    fi
+    local before after
+    if before="$(hook_rewrite "$SETTINGS" 2>/dev/null)" &&
+       after="$(hook_rewrite "$SETTINGS" migrate 2>/dev/null)" && [ -n "$after" ]; then
+      if [ "$before" != "$after" ]; then
+        printf '%s\n' "$after" > "$SETTINGS"
+        echo "  hook  .claude/settings.json  SessionStart command updated"
+      fi
+    else
+      echo "  skip  version hook update - .claude/settings.json is not valid JSON, or no jq/python3."
+      echo "        set its factory_session_start.sh command by hand to: $HOOK_CMD"
+    fi
     return 0
   fi
   mkdir -p "$REPO_ROOT/.claude"
@@ -304,15 +362,15 @@ install_hook() {
   # caveman: set -e is on - a merge that fails must land in the else, not exit.
   local merged=0
   if command -v jq >/dev/null 2>&1; then
-    jq --arg cmd "$HOOK_CMD" '.hooks.SessionStart += [{"matcher": "startup|clear",
-        "hooks": [{"type": "command", "command": $cmd, "timeout": 30}]}]' \
+    jq --arg cmd "$HOOK_CMD" --argjson to "$HOOK_TIMEOUT" '.hooks.SessionStart += [{"matcher": "startup|clear",
+        "hooks": [{"type": "command", "command": $cmd, "timeout": $to}]}]' \
       "$SETTINGS" > "$SETTINGS.new" 2>/dev/null && merged=1
   elif command -v python3 >/dev/null 2>&1; then
-    python3 - "$SETTINGS" "$HOOK_CMD" > "$SETTINGS.new" 2>/dev/null <<'PY' && merged=1
+    python3 - "$SETTINGS" "$HOOK_CMD" "$HOOK_TIMEOUT" > "$SETTINGS.new" 2>/dev/null <<'PY' && merged=1
 import json, sys
 s = json.load(open(sys.argv[1]))
 s.setdefault("hooks", {}).setdefault("SessionStart", []).append({"matcher": "startup|clear",
-    "hooks": [{"type": "command", "command": sys.argv[2], "timeout": 30}]})
+    "hooks": [{"type": "command", "command": sys.argv[2], "timeout": int(sys.argv[3])}]})
 print(json.dumps(s, indent=2))
 PY
   fi
