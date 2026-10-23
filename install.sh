@@ -298,11 +298,14 @@ fi
 # hook inits it first and tells the session script, which asks Claude to
 # re-scan the skills that just appeared. copies have nothing to init.
 HOOK_ROOT='R="$(git rev-parse --show-toplevel 2>/dev/null || echo "$CLAUDE_PROJECT_DIR")"; '
-HOOK_RUN='bash "$R/scripts/factory_session_start.sh"'
-HOOK_CMD="$HOOK_ROOT$HOOK_RUN"
+# caveman: only the engine, by path - one other submodule nobody may clone
+# (a private repo) fails the whole update and takes the engine down with it.
+# no script, no run: a failed fetch prints git's error, not an exit-127 hook.
+HOOK_SCRIPT='"$R/scripts/factory_session_start.sh"'
+HOOK_CMD="${HOOK_ROOT}[ ! -e $HOOK_SCRIPT ] || bash $HOOK_SCRIPT"
 case "$MODE:$FACTORY_REL" in
   copy:*|*:|*:.) ;;
-  *) HOOK_CMD="${HOOK_ROOT}I=0; [ -e \"\$R/$FACTORY_REL/VERSION\" ] || { git -C \"\$R\" submodule update --init --recursive --quiet >&2 && I=1; }; FACTORY_ENGINE_INITED=\$I $HOOK_RUN" ;;
+  *) HOOK_CMD="${HOOK_ROOT}I=0; [ -e \"\$R/$FACTORY_REL/VERSION\" ] || { git -C \"\$R\" submodule update --init --quiet -- \"$FACTORY_REL\" >&2 && I=1; }; [ ! -e $HOOK_SCRIPT ] || FACTORY_ENGINE_INITED=\$I bash $HOOK_SCRIPT" ;;
 esac
 HOOK_TIMEOUT=120
 SETTINGS="$REPO_ROOT/.claude/settings.json"

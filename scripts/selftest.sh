@@ -347,7 +347,11 @@ print("\n".join(h["command"] for e in s["hooks"]["SessionStart"] for h in e["hoo
 print(s["hooks"]["SessionStart"][0]["hooks"][0]["timeout"])' "$1/.claude/settings.json"; }
   t "a submodule install's hook inits the engine when it is missing"
   LAST_OUT="$(hook_cmd "$M")"
-  has '[ -e "$R/factory-engine/VERSION" ] || { git -C "$R" submodule update --init --recursive --quiet >&2'
+  has '[ -e "$R/factory-engine/VERSION" ] || { git -C "$R" submodule update --init --quiet -- "factory-engine" >&2'
+  t "and nothing but the engine"
+  lacks "--recursive"
+  t "and runs the session script only if it is there"
+  has '[ ! -e "$R/scripts/factory_session_start.sh" ] || FACTORY_ENGINE_INITED=$I bash'
   t "from git's root, not \$CLAUDE_PROJECT_DIR"
   has 'R="$(git rev-parse --show-toplevel 2>/dev/null || echo "$CLAUDE_PROJECT_DIR")"'
   t "with room for a clone"
@@ -383,6 +387,19 @@ json.dump(s, open(p, "w"), indent=2)' "$M/.claude/settings.json"
   lacks "|| true"
   has "submodule update --init"
 
+  t "a 1.1.0 hook command, which inited every submodule, is rewritten too"
+  python3 -c 'import json,sys; p=sys.argv[1]; s=json.load(open(p))
+h=s["hooks"]["SessionStart"][0]["hooks"][0]
+h["command"]=h["command"].replace("--init --quiet -- \"factory-engine\"", "--init --recursive --quiet")
+json.dump(s, open(p, "w"), indent=2)' "$M/.claude/settings.json"
+  LAST_OUT="$(hook_cmd "$M")"
+  has "--recursive"
+  run "$M" bash factory-engine/install.sh --update --no-pull
+  has "SessionStart command updated"
+  LAST_OUT="$(hook_cmd "$M")"
+  lacks "--recursive"
+  is "$(grep -c factory_session_start.sh "$M/.claude/settings.json")" "1"
+
   ( cd "$M" && git add -A && git commit -qm "hook" >/dev/null 2>&1 )
   MW="$WORK/submod-wt"
   git -C "$M" worktree add -q "$MW" >/dev/null 2>&1
@@ -402,6 +419,52 @@ json.dump(s, open(p, "w"), indent=2)' "$M/.claude/settings.json"
   LAST_OUT="$(cd "$MW" && CLAUDE_PROJECT_DIR="$M" bash -c "$CMD" 2>/dev/null)"; LAST_RC=$?
   rc_is 0
   lacks "reloadSkills"
+
+  # caveman: a sibling submodule nobody can clone - a private repo, say. it
+  # must not take the engine down with it.
+  SIB="$WORK/sibling-src"
+  git init -q "$SIB" && ( cd "$SIB" && git config user.email t@example.com &&
+    git config user.name t && echo x > x && git add x && git commit -qm x )
+  MS="$(plain_repo submod-sibling)"
+  ( cd "$MS" && git submodule add -q "$U" factory-engine >/dev/null 2>&1 &&
+    git submodule add -q "$SIB" other >/dev/null 2>&1 &&
+    bash factory-engine/install.sh >/dev/null 2>&1 && git add -A && git commit -qm init >/dev/null 2>&1 )
+  rm -rf "$SIB"
+  MSW="$WORK/submod-sibling-wt"
+  git -C "$MS" worktree add -q "$MSW" >/dev/null 2>&1
+  t "an unclonable sibling submodule does not stop the engine init"
+  CMD="$(hook_cmd "$MSW")"
+  LAST_OUT="$(cd "$MSW" && CLAUDE_PROJECT_DIR="$MS" bash -c "$CMD" 2>/dev/null)"; LAST_RC=$?
+  rc_is 0
+  exists "$MSW/factory-engine/VERSION"
+  exists "$MSW/.claude/skills/factory-spec/SKILL.md"
+  printf '%s' "$LAST_OUT" | python3 -c 'import json,sys; assert json.load(sys.stdin)["hookSpecificOutput"]["reloadSkills"] is True' 2>/dev/null &&
+    ok || bad "no reloadSkills in hook JSON" "$LAST_OUT"
+
+  # caveman: the engine itself out of reach - offline, no access. the session
+  # still starts: git's error on stderr, nothing on stdout, exit 0.
+  UB="$WORK/upstream-gone"
+  git clone -q "$U" "$UB"
+  MB="$(plain_repo submod-badengine)"
+  ( cd "$MB" && git submodule add -q "$UB" factory-engine >/dev/null 2>&1 &&
+    bash factory-engine/install.sh >/dev/null 2>&1 && git add -A && git commit -qm init >/dev/null 2>&1 )
+  rm -rf "$UB"
+  MBW="$WORK/submod-badengine-wt"
+  git -C "$MB" worktree add -q "$MBW" >/dev/null 2>&1
+  BEFORE_SETTINGS="$(cat "$MBW/.claude/settings.json")"
+  t "an engine that cannot be fetched still exits 0"
+  CMD="$(hook_cmd "$MBW")"
+  ERR="$(cd "$MBW" && CLAUDE_PROJECT_DIR="$MB" bash -c "$CMD" 2>&1 >/dev/null)"
+  LAST_OUT="$(cd "$MBW" && CLAUDE_PROJECT_DIR="$MB" bash -c "$CMD" 2>/dev/null)"; LAST_RC=$?
+  rc_is 0
+  t "with nothing on stdout"
+  is "$LAST_OUT" ""
+  t "and git's error on stderr, not a missing script"
+  LAST_OUT="$ERR"
+  has "Failed to clone 'factory-engine'"
+  lacks "No such file"
+  t "and settings.json untouched"
+  is "$(cat "$MBW/.claude/settings.json")" "$BEFORE_SETTINGS"
 
   # -- copy mode
   K="$(plain_repo copied)"

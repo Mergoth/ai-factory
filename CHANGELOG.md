@@ -24,8 +24,9 @@ PR body that start with `Action needed:` are copied into the entry.
 
 - The session hook works in fresh git worktrees, like the ones the Claude
   desktop app makes per session. `git worktree add` leaves submodules empty, so
-  the hook command now inits the engine submodule when its `VERSION` is
-  missing, takes the repo root from git rather than `$CLAUDE_PROJECT_DIR`, and
+  the hook command now inits the engine submodule only (no other submodule,
+  so one you cannot clone does not block it) when its `VERSION` is missing,
+  skips the session script quietly when the fetch fails, takes the repo root from git rather than `$CLAUDE_PROJECT_DIR`, and
   has a 120 s timeout. After an init, `factory_session_start.sh` returns
   `"reloadSkills": true` so the `/factory-*` skills load in that same session.
 - `install.sh --update` rewrites an existing session hook command (the 1.0.0

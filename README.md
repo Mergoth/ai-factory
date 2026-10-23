@@ -236,8 +236,11 @@ desktop app makes a worktree per session - so a fresh worktree has an empty
 `factory-engine/`: every skill link dangles and the session script is missing.
 The hook command handles it. It takes the repo root from
 `git rev-parse --show-toplevel` (in a worktree `$CLAUDE_PROJECT_DIR` can be the
-main checkout), and when `<engine>/VERSION` is missing it runs
-`git submodule update --init --recursive` first (hence a 120 s timeout). The
+main checkout), and when `<engine>/VERSION` is missing it inits the engine
+submodule only - `git submodule update --init -- <engine>`, so another
+submodule you cannot clone does not take the engine down (hence a 120 s
+timeout). If the fetch fails anyway, git's error goes to stderr and the
+session starts without the hook, never with an exit-127 error. The
 session script then answers with `"reloadSkills": true`, so Claude re-scans
 `.claude/skills` and `/factory-*` work in that very first session. Copy
 installs have nothing to init. `--update` rewrites an older hook command - the
