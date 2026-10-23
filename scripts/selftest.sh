@@ -282,6 +282,9 @@ if [ "$GROUP_ON" = 1 ]; then
          /install_one "scripts\/factory_state.sh"/ { next } { print }' install.sh > install.sh.new &&
     mv install.sh.new install.sh && git add -A && git commit -qm "add factory-new, drop state" )
   upstream_commit "tweak the spec skill"
+  ( cd "$U" && printf '\n# a knob added upstream\nNEW_KNOB="1"\n' >> factory.env.example &&
+    git commit -qam "add NEW_KNOB" )
+  printf 'TEST_CMD="true"\n' > "$O/factory.env"
 
   t "--update pulls a cloned engine"
   run "$O" bash "$C/install.sh" --update
@@ -291,7 +294,11 @@ if [ "$GROUP_ON" = 1 ]; then
   t "and lists the commits that came in"
   has "tweak the spec skill"
   t "with a count"
-  has "2 new commit(s)"
+  has "3 new commit(s)"
+  t "names a setting this update added"
+  has "new setting: NEW_KNOB"
+  t "but not old settings the project left out"
+  lacks "new setting: AGY_TIMEOUT"
   t "links the skill upstream added, using the NEW install.sh"
   [ -L "$O/.claude/skills/factory-new" ] && ok || bad "factory-new was not linked" "$LAST_OUT"
   t "prunes the script upstream dropped"
@@ -368,8 +375,8 @@ if [ "$GROUP_ON" = 1 ]; then
   t "and writes the manifest it was missing"
   exists "$P/factory/installed.txt"
 
-  t "names settings the project's factory.env does not mention"
-  has "new setting: AGY_TIMEOUT"
+  t "does not nag about settings when no engine commits came in"
+  lacks "new setting:"
 
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 fi

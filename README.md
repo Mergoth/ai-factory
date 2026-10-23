@@ -172,7 +172,7 @@ It pulls the engine (`git submodule update --remote` for a submodule,
 `git pull --ff-only` for a clone that lives elsewhere), then hands over to the
 **new** `install.sh`, so a skill added upstream gets linked. It refreshes copies
 in `--copy` installs, prunes links and copies that upstream dropped, and prints
-the engine commits that came in, plus any template or `factory.env` setting
+the engine commits that came in, plus any changed template and any `factory.env` setting this update added
 that changed. Your `factory/`, `factory.env`, specs and handoffs are never
 touched. Afterwards, `git status` and commit the submodule pointer and
 `factory/installed.txt` together.
@@ -657,7 +657,7 @@ And the harness has its own test suite, which needs no `agy`, no network and no
 money:
 
 ```bash
-bash scripts/selftest.sh          # ~25 seconds, 139 cases
+bash scripts/selftest.sh          # ~25 seconds, 141 cases
 bash scripts/selftest.sh --only lock
 bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
 ```

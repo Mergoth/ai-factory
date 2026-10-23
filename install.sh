@@ -322,13 +322,18 @@ if [ "$UPDATE" -eq 1 ]; then
       echo "templates changed - your factory/ files are yours, compare by hand:"
       printf '%s\n' "$TPL" | sed 's/^/  /'
     fi
-  fi
-  [ -z "$PRUNED" ] || echo "pruned: $PRUNED"
-  if [ -f "$REPO_ROOT/factory.env" ]; then
-    for k in $(sed -n 's/^#* *\([A-Z][A-Z_]*\)=.*/\1/p' "$FACTORY_DIR/factory.env.example" | sort -u); do
-      grep -qE "^[# ]*$k=" "$REPO_ROOT/factory.env" || echo "new setting: $k (see factory.env.example)"
+    # caveman: only settings this update brought in. one the project left out
+    # on purpose would otherwise nag on every run until nobody reads it.
+    env_keys() { git -C "$FACTORY_DIR" show "$1:factory.env.example" 2>/dev/null |
+                 sed -n 's/^#* *\([A-Z][A-Z_]*\)=.*/\1/p' | sort -u || true; }
+    OLD_KEYS="$(env_keys "$OLD_REV")"
+    for k in $(env_keys "$NEW_REV"); do
+      in_list "$k" "$OLD_KEYS" && continue
+      grep -qE "^[# ]*$k=" "$REPO_ROOT/factory.env" 2>/dev/null ||
+        echo "new setting: $k (see factory.env.example)"
     done
   fi
+  [ -z "$PRUNED" ] || echo "pruned: $PRUNED"
   echo
   echo "done. review and commit: git -C $REPO_ROOT status"
   exit 0
