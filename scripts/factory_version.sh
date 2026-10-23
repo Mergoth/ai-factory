@@ -132,7 +132,7 @@ if [ "$MODE" = "self" ]; then
     STATUS="unknown - $LATEST_FROM. VERSION is $ENGINE_VER"
   else
     case "$(factory_ver_cmp "$ENGINE_VER" "$LATEST")" in
-      1)  STATUS="unreleased - VERSION $ENGINE_VER has no tag yet: git tag v$ENGINE_VER && git push origin v$ENGINE_VER" ;;
+      1)  STATUS="unreleased - VERSION $ENGINE_VER has no tag yet. the release workflow tags it when this reaches main" ;;
       0)  STATUS="up to date - $ENGINE_VER is the newest release" ;;
       -1) STATUS="behind - v$LATEST is out and this checkout is $ENGINE_VER: git pull" ;;
     esac

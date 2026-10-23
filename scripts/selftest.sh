@@ -491,6 +491,69 @@ if [ "$GROUP_ON" = 1 ]; then
   has "unreleased - VERSION 2.1.0 has no tag yet"
 fi
 
+# ---------------------------------------------------------------- release
+group "release"
+if [ "$GROUP_ON" = 1 ]; then
+  # caveman: what the release workflow runs on every merge to main. a copy of
+  # the engine, so the real VERSION and CHANGELOG are never touched.
+  RL="$WORK/release"
+  mkdir -p "$RL"
+  ( cd "$ENGINE" && tar cf - --exclude .git --exclude .factory-cache . ) | ( cd "$RL" && tar xf - )
+  ( cd "$RL" && printf '1.0.0\n' > VERSION && git init -q . && git config user.email t@example.com &&
+    git config user.name t && git add -A && git commit -qm base >/dev/null 2>&1 && git tag v1.0.0 )
+  cut_release() { # cut_release <title> [body]  - as the workflow does, then tag
+    printf '%s\n' "${2:-}" > "$RL/body.txt"
+    run "$RL" bash scripts/release.sh --title "$1" --body body.txt --url "https://example.com/pull/9" --date 2026-01-01
+    ( cd "$RL" && git commit -qam "release" && git tag "v$(cat VERSION)" )
+  }
+  top_entry() { sed -n 's/^## \([0-9][0-9.]*\) .*/\1/p' "$RL/CHANGELOG.md" | head -1; }
+
+  t "a fix -> patch"
+  cut_release "fix: the lint misses a heading"
+  is "$LAST_OUT" "1.0.1"
+  t "VERSION and the newest changelog entry agree"
+  is "$(top_entry)" "$(cat "$RL/VERSION")"
+  t "the entry is the title without its prefix, with the PR link"
+  run "$RL" grep -qxF -- "- the lint misses a heading (https://example.com/pull/9)" CHANGELOG.md
+  rc_is 0
+
+  t "a feat -> minor"
+  cut_release "feat(check): a new red flag"
+  is "$LAST_OUT" "1.1.0"
+  t "anything else -> patch"
+  cut_release "docs: typo"
+  is "$LAST_OUT" "1.1.1"
+
+  t "a breaking title -> major"
+  cut_release "feat!: handoffs move to a new format"
+  is "$LAST_OUT" "2.0.0"
+  t "with an Action needed pointer when the PR gave none"
+  run "$RL" grep -q "^Action needed: breaking change, read https://example.com/pull/9" CHANGELOG.md
+  rc_is 0
+  t "BREAKING CHANGE in the body -> major too"
+  cut_release "refactor: rename a setting" "BREAKING CHANGE: AGY_TIMEOUT is gone
+Action needed: rename AGY_TIMEOUT to AGY_ROUND_TIMEOUT in factory.env"
+  is "$LAST_OUT" "3.0.0"
+  t "and the PR's own Action needed lands in the entry"
+  run "$RL" grep -qxF "Action needed: rename AGY_TIMEOUT to AGY_ROUND_TIMEOUT in factory.env" CHANGELOG.md
+  rc_is 0
+  t "newest entry first"
+  is "$(top_entry)" "3.0.0"
+
+  t "a VERSION set by hand and not tagged is released as is"
+  ( cd "$RL" && printf '5.0.0\n' > VERSION &&
+    awk '!d && /^## [0-9]/ { print "## 5.0.0 - 2026-01-01\n\n- written by hand\n"; d=1 } { print }' CHANGELOG.md > c.new &&
+    mv c.new CHANGELOG.md && git commit -qam "hand" )
+  run "$RL" bash scripts/release.sh --title "feat: whatever"
+  is "$LAST_OUT" "5.0.0"
+  t "keeping the entry written by hand, not adding a second"
+  is "$(grep -c '^## 5.0.0 ' "$RL/CHANGELOG.md")" "1"
+
+  t "no --title is an error"
+  run "$RL" bash scripts/release.sh
+  rc_is 2
+fi
+
 # ------------------------------------------------------ self-development
 group "self mode"
 if [ "$GROUP_ON" = 1 ]; then

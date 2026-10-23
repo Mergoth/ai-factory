@@ -689,7 +689,7 @@ And the harness has its own test suite, which needs no `agy`, no network and no
 money:
 
 ```bash
-bash scripts/selftest.sh          # ~30 seconds, 168 cases
+bash scripts/selftest.sh          # ~30 seconds, 181 cases
 bash scripts/selftest.sh --only lock
 bash scripts/selftest.sh --keep   # leave the sandbox repos to poke at
 ```
@@ -719,22 +719,29 @@ for, and it costs nothing but a read-only subagent.
 
 ## Releasing
 
-Versions are semver from the client's side: **major** = update required, the
-`CHANGELOG.md` entry says what to do under `Action needed:`; **minor** = new
-skills, settings or checks; **patch** = fixes. A release is three things:
+Nothing to do by hand: **every PR merged to `main` is a release.**
+`.github/workflows/release.yml` reads the merged PR's title, runs
+`scripts/release.sh` to write the next `VERSION` and its `CHANGELOG.md` entry,
+commits that to `main`, tags `v<version>` and publishes a GitHub release. The
+tag is what `factory_version.sh` in every client compares against.
 
-1. bump `VERSION`
-2. add its `## X.Y.Z - YYYY-MM-DD` entry at the top of `CHANGELOG.md` - the
-   selftest fails until the two agree
-3. after the merge, tag `main` and push the tag:
+Versions are semver from the client's side, and the PR title picks the bump:
 
-   ```bash
-   git tag v$(cat VERSION) && git push origin v$(cat VERSION)
-   ```
+| PR title | bump | client sees |
+|---|---|---|
+| `feat!: ...`, `fix(x)!: ...`, or `BREAKING CHANGE` in the body | major | `update required` |
+| `feat: ...`, `feat(x): ...` | minor | `update available` |
+| anything else (`fix:`, `docs:`, `test:`, ...) | patch | `update available` |
 
-Clients only see a release once the tag is pushed. In this repo
-`bash scripts/factory_version.sh` says `unreleased` while `VERSION` is ahead of
-the newest tag, so a forgotten tag shows up.
+So the one thing a PR author decides is the title. For a breaking change, add
+`Action needed: <what a project must do>` lines to the PR body - they are copied
+into the changelog entry. A major PR without one gets a pointer to the PR
+instead.
+
+To pick a number yourself, set `VERSION` and write its changelog entry in the
+PR: an untagged `VERSION` is released as is, and an entry already there is
+kept. `bash scripts/release.sh --help` shows the rules; the selftest covers
+them.
 
 ## Requirements
 
@@ -766,6 +773,8 @@ scripts/factory_version.sh     # installed vs newest release, update or not
 scripts/factory_env.sh         # mode, engine root, persona dirs
 scripts/factory_common.sh      # shared bones, sourced by every script
 scripts/selftest.sh            # the harness's own test suite, no agy needed
+scripts/release.sh             # next VERSION + CHANGELOG entry from a PR title
+.github/workflows/release.yml  # every merge to main: bump, tag, GitHub release
 agents/skills/                 # agy-side skills (empty by design)
 templates/brief.md             # shape of a brief
 templates/spec.md              # shape of a spec

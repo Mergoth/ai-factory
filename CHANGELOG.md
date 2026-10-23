@@ -13,15 +13,20 @@ Versions follow semver, read from the client's side:
   beyond `install.sh --update`.
 - **patch** - fixes only.
 
-Every release is a `VERSION` bump, an entry here, and a `v<version>` tag on
-`main`. `scripts/factory_version.sh` compares a project against the newest tag.
+Releases are automatic: every PR merged to `main` is one. The PR title picks
+the bump - `feat!:` (or `BREAKING CHANGE` in the body) major, `feat:` minor,
+anything else patch - and `.github/workflows/release.yml` writes `VERSION`, adds
+the entry here, tags `v<version>` and publishes a GitHub release. Lines in the
+PR body that start with `Action needed:` are copied into the entry.
+`scripts/factory_version.sh` compares a project against the newest tag.
 
 ## 1.0.0 - 2026-10-23
 
 First versioned release. Everything before it is this release too: installs
 that predate it record no version and are treated as older than 1.0.0.
 
-- `VERSION`, this changelog, and `v*` release tags.
+- `VERSION`, this changelog, and `v*` release tags, cut automatically on every
+  merge to `main` by `.github/workflows/release.yml`.
 - `scripts/factory_version.sh`: installed vs engine vs newest release, and
   whether the project is up to date, behind, or must update. `/factory-check`
   runs it and passes a "behind" on to you.
