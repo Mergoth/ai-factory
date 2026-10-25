@@ -86,3 +86,18 @@ Evidence: rich-output-web r1 passed lint, both builds and 25 integration tests, 
 Do not remove: step 3c "When the change ships UI, drive each screen…". Without it, a crash on every reply ships green.
 
 Seen again (on "A requested model skipped by the quota cache must be reported as skipped"): rich-output-web r1 sonnet exit 3 -> flash; rich-output-fixes r1 opus skipped by quota cache, footer said exit 0.
+
+## 20261025T1945Z - unibot / mem0-recall-fix
+
+From: `vlaid-unibot`, `factory/improvements.md`
+
+Run: 2 rounds, claude-sonnet-4-6 both (the requested model actually ran), final status Success.
+
+### Probe the real external service before writing the spec
+Target: `skills/factory-spec/SKILL.md`, step 2 (Read the repo)
+Evidence: a 1-minute probe against real Mem0, run before the spec, showed that `delete_all(agent_id=…)` wipes every agent's memories. Neither the issue nor the code review had spotted that second bug, and it went into the same contract instead of costing a later run.
+Proposal: add to step 2: "When the change depends on an external API's behaviour (filters, deletes, async writes), run a throwaway probe against the real service and cite its output in the spec. The docs say what the API accepts; only a probe says what it does."
+
+### Held - checker reads the files, not a filtered diff
+Evidence: a `grep '^[-+][^-+]'` over `git diff` hid markdown bullet lines and nearly failed a correct round as "walkthrough claims edits not in the diff".
+Do not remove: factory-check step 5's instruction to compare the walkthrough with `git diff` itself. Never pipe that diff through a content filter.
