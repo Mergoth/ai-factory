@@ -20,6 +20,10 @@ the entry here, tags `v<version>` and publishes a GitHub release. Lines in the
 PR body that start with `Action needed:` are copied into the entry.
 `scripts/factory_version.sh` compares a project against the newest tag.
 
+## 1.1.1 - 2026-10-25
+
+- unibot improvement proposals from rich-output runs (https://github.com/Mergoth/ai-factory/pull/5)
+
 ## 1.1.0 - 2026-10-23
 
 - The session hook works in fresh git worktrees, like the ones the Claude
