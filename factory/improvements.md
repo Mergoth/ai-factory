@@ -101,3 +101,13 @@ Proposal: add to step 2: "When the change depends on an external API's behaviour
 ### Held - checker reads the files, not a filtered diff
 Evidence: a `grep '^[-+][^-+]'` over `git diff` hid markdown bullet lines and nearly failed a correct round as "walkthrough claims edits not in the diff".
 Do not remove: factory-check step 5's instruction to compare the walkthrough with `git diff` itself. Never pipe that diff through a content filter.
+
+## 20261025T2000Z - unibot / ci-env-concurrency
+
+From: `vlaid-unibot`, `factory/improvements.md`
+
+### Held - for CI changes, the proof is two real runs, not a local lint
+Evidence: no actionlint and no local Actions. Pushing a second commit and reading both runs' job timelines proved queueing (run 2's TEST deploy started 3 s after run 1's e2e ended).
+Do not remove: the "Environment limits -> checker verifies on the real PR" handoff pattern.
+
+Seen again (on "A requested model skipped by the quota cache must be reported as skipped"): ci-env-concurrency r1, claude-sonnet-4-6 exit 3, fell back to flash.
